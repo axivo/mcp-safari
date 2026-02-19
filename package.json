@@ -1,6 +1,6 @@
 {
   "name": "@axivo/mcp-safari",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "MCP server for visual web access through Safari",
   "keywords": [
@@ -30,7 +30,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.0"
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^4.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

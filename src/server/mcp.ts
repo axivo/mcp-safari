@@ -6,7 +6,7 @@
  * @license BSD-3-Clause
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequest,
@@ -14,24 +14,32 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
 import { Client } from './client.js';
 import { McpTool } from './tool.js';
 
+interface ClickArgs {
+  text: string;
+}
+
 interface ExecuteArgs {
-  url: string;
   script: string;
 }
 
 interface NavigateArgs {
-  url: string;
-}
-
-interface ReadArgs {
-  url: string;
+  url?: string;
+  direction?: 'back' | 'forward';
+  steps?: number;
 }
 
 interface ScreenshotArgs {
-  url: string;
+  page?: number;
+}
+
+interface TypeArgs {
+  text: string;
+  selector?: string;
+  submit?: boolean;
 }
 
 type ToolHandler = (args: any) => Promise<any>;
@@ -39,26 +47,26 @@ type ToolHandler = (args: any) => Promise<any>;
 /**
  * Safari MCP Server implementation bridging Safari browser with Model Context Protocol
  *
- * Provides visual web access through MCP tools, managing SafariDriver
- * communication, request routing, and response formatting.
+ * Provides visual web access through MCP tools, managing AppleScript
+ * automation, request routing, and response formatting.
  *
- * @class McpServer
+ * @class Mcp
  */
-export class McpServer {
+export class Mcp {
   private client: Client;
-  private server: Server;
+  private server: McpServer;
   private tool: McpTool;
   private toolHandlers: Map<string, ToolHandler>;
 
   /**
-   * Creates a new McpServer instance with tool setup
+   * Creates a new Mcp instance with tool setup
    *
-   * Initializes SafariDriver client, MCP server, and tool registry.
+   * Initializes AppleScript client, MCP server, and tool registry.
    * Sets up handler mappings and prepares for transport connection.
    */
   constructor() {
     this.client = new Client();
-    this.server = new Server(
+    this.server = new McpServer(
       { name: 'safari', version: this.client.version() },
       { capabilities: { tools: {} } }
     );
@@ -69,6 +77,32 @@ export class McpServer {
   }
 
   /**
+   * Handles click tool requests
+   *
+   * @private
+   * @param {ClickArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleClick(args: ClickArgs): Promise<any> {
+    const error = this.validate(args, ['text']);
+    if (error) {
+      return error;
+    }
+    return await this.client.clickElement(args.text);
+  }
+
+  /**
+   * Handles close tool requests
+   *
+   * @private
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleClose(): Promise<any> {
+    await this.client.closeSession();
+    return 'Safari window closed';
+  }
+
+  /**
    * Handles execute tool requests
    *
    * @private
@@ -76,13 +110,12 @@ export class McpServer {
    * @returns {Promise<any>} Tool execution response
    */
   private async handleExecute(args: ExecuteArgs): Promise<any> {
-    if (!args.url || !args.script) {
-      return 'Missing required arguments: url and script';
+    const error = this.validate(args, ['script']);
+    if (error) {
+      return error;
     }
-    return this.withSession(args.url, async (sessionId) => {
-      const result = await this.client.executeScript(sessionId, args.script);
-      return result;
-    });
+    const result = await this.client.executeScript(args.script);
+    return result;
   }
 
   /**
@@ -93,33 +126,43 @@ export class McpServer {
    * @returns {Promise<any>} Tool execution response
    */
   private async handleNavigate(args: NavigateArgs): Promise<any> {
-    if (!args.url) {
-      return 'Missing required argument: url';
+    if (args.url) {
+      await this.client.navigateTo(args.url);
+    } else if (args.direction) {
+      const steps = args.direction === 'back' ? -(args.steps!) : args.steps!;
+      await this.client.goHistory(steps);
+    } else {
+      return 'Missing required arguments: url or direction';
     }
-    return this.withSession(args.url, async (sessionId) => {
-      const title = await this.client.getTitle(sessionId);
-      const url = await this.client.getUrl(sessionId);
-      return { title, url };
-    });
+    const title = await this.client.getTitle();
+    const url = await this.client.getUrl();
+    const { pages } = await this.client.getPageInfo();
+    return { title, url, pages };
+  }
+
+  /**
+   * Handles open tool requests
+   *
+   * @private
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleOpen(): Promise<any> {
+    await this.client.openSession();
+    return 'Safari window opened';
   }
 
   /**
    * Handles read tool requests
    *
    * @private
-   * @param {ReadArgs} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleRead(args: ReadArgs): Promise<any> {
-    if (!args.url) {
-      return 'Missing required argument: url';
-    }
-    return this.withSession(args.url, async (sessionId) => {
-      const title = await this.client.getTitle(sessionId);
-      const url = await this.client.getUrl(sessionId);
-      const text = await this.client.executeScript(sessionId, 'return document.body.innerText');
-      return { title, url, text };
-    });
+  private async handleRead(): Promise<any> {
+    const title = await this.client.getTitle();
+    const url = await this.client.getUrl();
+    const text = await this.client.executeScript('document.body.innerText');
+    const { pages } = await this.client.getPageInfo();
+    return { title, url, text, pages };
   }
 
   /**
@@ -130,15 +173,19 @@ export class McpServer {
    * @returns {Promise<Object>} Response containing tool execution results
    */
   private async handleRequest(request: CallToolRequest): Promise<any> {
-    if (!request.params.arguments) {
-      return 'No arguments provided';
-    }
     const handler = this.toolHandlers.get(request.params.name);
     if (!handler) {
-      return `Unknown tool: ${request.params.name}`;
+      return this.client.response(`Unknown tool: ${request.params.name}`);
     }
-    const result = await handler(request.params.arguments);
-    return this.client.response(result, typeof result === 'string' ? false : true);
+    try {
+      const result = await handler(request.params.arguments || {});
+      if (result?.content) {
+        return result;
+      }
+      return this.client.response(result, typeof result === 'string' ? false : true);
+    } catch (error) {
+      return this.client.response(`Error: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -149,13 +196,23 @@ export class McpServer {
    * @returns {Promise<any>} Tool execution response
    */
   private async handleScreenshot(args: ScreenshotArgs): Promise<any> {
-    if (!args.url) {
-      return 'Missing required argument: url';
+    const base64Png = await this.client.takeScreenshot(args.page!);
+    return this.client.imageResponse(base64Png);
+  }
+
+  /**
+   * Handles type tool requests
+   *
+   * @private
+   * @param {TypeArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleType(args: TypeArgs): Promise<any> {
+    const error = this.validate(args, ['text']);
+    if (error) {
+      return error;
     }
-    return this.withSession(args.url, async (sessionId) => {
-      const base64Png = await this.client.takeScreenshot(sessionId);
-      return this.client.imageResponse(base64Png);
-    });
+    return await this.client.typeText(args.text, args.selector, args.submit);
   }
 
   /**
@@ -174,41 +231,86 @@ export class McpServer {
    * @private
    */
   private setupHandlers(): void {
-    this.server.setRequestHandler(CallToolRequestSchema, this.handleRequest.bind(this));
-    this.server.setRequestHandler(ListToolsRequestSchema, this.handleTools.bind(this));
+    this.server.server.setRequestHandler(CallToolRequestSchema, this.handleRequest.bind(this));
+    this.server.server.setRequestHandler(ListToolsRequestSchema, this.handleTools.bind(this));
   }
 
   /**
-   * Sets up tool handlers registry
+   * Sets up tool handlers registry with default value injection
+   *
+   * Registers all tool handlers with argument processing that injects
+   * default values from tool schema definitions before execution.
    *
    * @private
    */
   private setupToolHandlers(): void {
-    this.toolHandlers.set('execute', this.handleExecute.bind(this));
-    this.toolHandlers.set('navigate', this.handleNavigate.bind(this));
-    this.toolHandlers.set('read', this.handleRead.bind(this));
-    this.toolHandlers.set('screenshot', this.handleScreenshot.bind(this));
+    const tools = this.setServerTools();
+    for (const { tool, handler } of tools) {
+      const wrappedHandler: ToolHandler = async (args: unknown) => {
+        const processedArgs = args as Record<string, unknown>;
+        const properties = tool.inputSchema?.properties;
+        if (properties) {
+          Object.entries(properties).forEach(([name, value]) => {
+            const schema = value as { default?: unknown };
+            if (processedArgs[name] === undefined && schema.default !== undefined) {
+              processedArgs[name] = schema.default;
+            }
+          });
+        }
+        return await handler(processedArgs);
+      };
+      this.toolHandlers.set(tool.name, wrappedHandler);
+    }
   }
 
   /**
-   * Executes a tool operation within an ephemeral SafariDriver session
+   * Maps tool definitions to corresponding handler functions
    *
-   * Creates a session, runs the operation, and tears down the session
-   * regardless of success or failure.
+   * Creates comprehensive mapping between tool definitions and handlers,
+   * enabling dynamic default value injection from tool schemas.
    *
    * @private
-   * @param {string} url - URL to navigate to
-   * @param {Function} operation - Async operation to perform with the session
-   * @returns {Promise<any>} Operation result
+   * @returns {{ tool: Tool; handler: ToolHandler }[]} Array of tool-to-handler mappings
    */
-  private async withSession(url: string, operation: (sessionId: string) => Promise<any>): Promise<any> {
-    const sessionId = await this.client.createSession();
-    try {
-      await this.client.navigateTo(sessionId, url);
-      return await operation(sessionId);
-    } finally {
-      await this.client.deleteSession(sessionId);
+  private setServerTools(): { tool: Tool; handler: ToolHandler }[] {
+    return [
+      { tool: this.tool.click(), handler: this.handleClick.bind(this) },
+      { tool: this.tool.close(), handler: this.handleClose.bind(this) },
+      { tool: this.tool.execute(), handler: this.handleExecute.bind(this) },
+      { tool: this.tool.navigate(), handler: this.handleNavigate.bind(this) },
+      { tool: this.tool.open(), handler: this.handleOpen.bind(this) },
+      { tool: this.tool.read(), handler: this.handleRead.bind(this) },
+      { tool: this.tool.screenshot(), handler: this.handleScreenshot.bind(this) },
+      { tool: this.tool.type(), handler: this.handleType.bind(this) }
+    ];
+  }
+
+  /**
+   * Validates required arguments for tool handler methods using Zod schemas
+   *
+   * Performs runtime validation of tool arguments against required field specifications,
+   * ensuring type safety and proper error handling for missing parameters.
+   *
+   * @private
+   * @param {unknown} args - Tool arguments object to validate
+   * @param {string[]} fields - Array of required field names for validation
+   * @returns {string | null} Error message if validation fails, null if all requirements met
+   */
+  private validate(args: unknown, fields: string[]): string | null {
+    const type: Record<string, z.ZodType> = {};
+    for (const field of fields) {
+      type[field] = z.union([
+        z.number(),
+        z.string().min(1)
+      ]);
     }
+    const schema = z.object(type);
+    const result = schema.safeParse(args);
+    if (!result.success) {
+      const missing = result.error.issues.map(issue => issue.path[0]);
+      return `Missing required arguments: ${missing.join(', ')}`;
+    }
+    return null;
   }
 
   /**

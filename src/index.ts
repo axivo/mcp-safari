@@ -11,7 +11,7 @@
  */
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { McpServer } from './server/mcp.js';
+import { Mcp } from './server/mcp.js';
 
 /**
  * Main entry point for the Safari MCP Server
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
       return;
     }
   });
-  const mcpServer = new McpServer();
+  const mcpServer = new Mcp();
   const transport = new StdioServerTransport();
   try {
     await mcpServer.connect(transport);

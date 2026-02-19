@@ -9,7 +9,7 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 /**
- * MCP Tool Definitions for Safari WebDriver Integration
+ * MCP Tool Definitions for Safari Integration
  *
  * Provides MCP tool definitions that bridge Safari browser capabilities
  * with Model Context Protocol, enabling Claude agents to visually
@@ -19,24 +19,63 @@ import { Tool } from '@modelcontextprotocol/sdk/types.js';
  */
 export class McpTool {
   /**
+   * Creates MCP tool for clicking elements by visible text
+   *
+   * Finds and clicks elements matching the specified text content,
+   * supporting links, buttons, and other clickable elements.
+   *
+   * @returns {Tool} MCP tool definition for clicking elements
+   */
+  click(): Tool {
+    return {
+      name: 'click',
+      description: 'Click an element on the page by its visible text content',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Visible text of the element to click' }
+        },
+        required: ['text']
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for closing the Safari window
+   *
+   * Terminates the active browser session and closes the Safari window.
+   *
+   * @returns {Tool} MCP tool definition for closing the browser
+   */
+  close(): Tool {
+    return {
+      name: 'close',
+      description: 'Close the Safari window',
+      inputSchema: {
+        type: 'object',
+        properties: {}
+      }
+    };
+  }
+
+  /**
    * Creates MCP tool for executing JavaScript in the browser context
    *
-   * Enables running arbitrary JavaScript on a web page after navigating
-   * to the specified URL, returning the script's result.
+   * Runs arbitrary JavaScript on the current page,
+   * returning the script's result.
    *
    * @returns {Tool} MCP tool definition for JavaScript execution
    */
   execute(): Tool {
     return {
       name: 'execute',
-      description: 'Navigate to a URL and execute JavaScript in the browser context',
+      description: 'Execute JavaScript in the browser context',
       inputSchema: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'The URL to navigate to' },
-          script: { type: 'string', description: 'The JavaScript code to execute' }
+          script: { type: 'string', description: 'JavaScript code to execute' }
         },
-        required: ['url', 'script']
+        required: ['script']
       }
     };
   }
@@ -51,31 +90,55 @@ export class McpTool {
    */
   getTools(): Tool[] {
     return [
+      this.click(),
+      this.close(),
       this.execute(),
       this.navigate(),
+      this.open(),
       this.read(),
-      this.screenshot()
+      this.screenshot(),
+      this.type()
     ];
   }
 
   /**
-   * Creates MCP tool for navigating to a URL
+   * Creates MCP tool for navigating to a URL or through browser history
    *
-   * Navigates Safari to the specified URL and returns
-   * confirmation with the page title and final URL.
+   * Navigates Safari to the specified URL, or backward/forward through
+   * browser history. Returns the page title, final URL, and viewport page count.
    *
    * @returns {Tool} MCP tool definition for URL navigation
    */
   navigate(): Tool {
     return {
       name: 'navigate',
-      description: 'Navigate to a URL and return the page title and final URL',
+      description: 'Navigate to a URL or through browser history (back/forward)',
       inputSchema: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'The URL to navigate to' }
-        },
-        required: ['url']
+          direction: { type: 'string', enum: ['back', 'forward'], description: 'Navigate back or forward in browser history' },
+          steps: { type: 'number', description: 'Number of steps for back/forward navigation', default: 1 },
+          url: { type: 'string', description: 'URL to navigate to' }
+        }
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for opening a Safari window
+   *
+   * Opens a new Safari browser window with configured dimensions,
+   * ready for navigation and interaction.
+   *
+   * @returns {Tool} MCP tool definition for opening the browser
+   */
+  open(): Tool {
+    return {
+      name: 'open',
+      description: 'Open a Safari window',
+      inputSchema: {
+        type: 'object',
+        properties: {}
       }
     };
   }
@@ -83,21 +146,18 @@ export class McpTool {
   /**
    * Creates MCP tool for reading page content
    *
-   * Navigates to the specified URL and extracts the page title,
-   * current URL, and visible text content.
+   * Extracts the page title, current URL, and visible text content
+   * from the current page.
    *
    * @returns {Tool} MCP tool definition for page content reading
    */
   read(): Tool {
     return {
       name: 'read',
-      description: 'Navigate to a URL and get the page title, URL, and text content',
+      description: 'Get the page title, URL, and extracted text content',
       inputSchema: {
         type: 'object',
-        properties: {
-          url: { type: 'string', description: 'The URL to navigate to' }
-        },
-        required: ['url']
+        properties: {}
       }
     };
   }
@@ -105,21 +165,44 @@ export class McpTool {
   /**
    * Creates MCP tool for capturing page screenshots
    *
-   * Navigates to the specified URL and captures a screenshot
-   * of the visible page, returning it as a base64 PNG image.
+   * Captures a screenshot of the specified viewport page,
+   * returning it as a base64 PNG image.
    *
    * @returns {Tool} MCP tool definition for page screenshot capture
    */
   screenshot(): Tool {
     return {
       name: 'screenshot',
-      description: 'Navigate to a URL and capture a screenshot of the visible page',
+      description: 'Optional page screenshot to visualize images and specific page elements',
       inputSchema: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'The URL to navigate to' }
+          page: { type: 'number', description: 'Page number to capture', default: 1 }
+        }
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for typing text into input elements
+   *
+   * Sets the value of input fields with proper event dispatching
+   * for framework reactivity, with optional form submission.
+   *
+   * @returns {Tool} MCP tool definition for typing into inputs
+   */
+  type(): Tool {
+    return {
+      name: 'type',
+      description: 'Type text into a page input field',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the target input' },
+          submit: { type: 'boolean', description: 'Submit form by pressing Enter after typing', default: false },
+          text: { type: 'string', description: 'Text to type' }
         },
-        required: ['url']
+        required: ['text']
       }
     };
   }
