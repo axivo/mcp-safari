@@ -21,6 +21,7 @@ import { McpTool } from './tool.js';
 interface ClickArgs {
   text: string;
   selector?: string;
+  wait?: string;
 }
 
 interface ExecuteArgs {
@@ -39,12 +40,17 @@ interface ReadArgs {
   selector?: string;
 }
 
+interface SearchArgs {
+  text: string;
+}
+
 interface ScreenshotArgs {
   page?: number;
 }
 
 interface TypeArgs {
   text: string;
+  append?: boolean;
   selector?: string;
   submit?: boolean;
 }
@@ -95,7 +101,11 @@ export class Mcp {
     if (error) {
       return error;
     }
-    return await this.client.clickElement(args.text, args.selector);
+    const { result, selectorFound } = await this.client.clickElement(args.text, args.selector, args.wait);
+    if (args.wait) {
+      return { result, selectorFound };
+    }
+    return result;
   }
 
   /**
@@ -209,6 +219,26 @@ export class Mcp {
   }
 
   /**
+   * Handles search tool requests
+   *
+   * @private
+   * @param {SearchArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleSearch(args: SearchArgs): Promise<any> {
+    const error = this.validate(args, ['text']);
+    if (error) {
+      return error;
+    }
+    await this.client.search(args.text);
+    const title = await this.client.getTitle();
+    const url = await this.client.getUrl();
+    const readyState = await this.client.executeScript('document.readyState');
+    const { pages } = await this.client.getPageInfo();
+    return { title, url, readyState, pages };
+  }
+
+  /**
    * Handles screenshot tool requests
    *
    * @private
@@ -238,7 +268,7 @@ export class Mcp {
     if (error) {
       return error;
     }
-    return await this.client.typeText(args.text, args.selector, args.submit);
+    return await this.client.typeText(args.text, args.selector, args.append, args.submit);
   }
 
   /**
@@ -306,6 +336,7 @@ export class Mcp {
       { tool: this.tool.navigate(), handler: this.handleNavigate.bind(this) },
       { tool: this.tool.open(), handler: this.handleOpen.bind(this) },
       { tool: this.tool.read(), handler: this.handleRead.bind(this) },
+      { tool: this.tool.search(), handler: this.handleSearch.bind(this) },
       { tool: this.tool.screenshot(), handler: this.handleScreenshot.bind(this) },
       { tool: this.tool.type(), handler: this.handleType.bind(this) }
     ];

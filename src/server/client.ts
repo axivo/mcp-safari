@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 export class Client {
   private active: boolean = false;
   private pageLoadTimeout: number;
+  private windowBounds: number;
   private windowHeight: number;
   private windowWidth: number;
 
@@ -32,6 +33,7 @@ export class Client {
    */
   constructor() {
     this.pageLoadTimeout = parseInt(process.env.SAFARI_PAGE_TIMEOUT || '10000', 10);
+    this.windowBounds = parseInt(process.env.SAFARI_WINDOW_BOUNDS || '20', 10);
     this.windowHeight = parseInt(process.env.SAFARI_WINDOW_HEIGHT || '1024', 10);
     this.windowWidth = parseInt(process.env.SAFARI_WINDOW_WIDTH || '1280', 10);
   }
@@ -65,6 +67,42 @@ export class Client {
     if (!this.active) {
       throw new Error('No active session. Use the open tool first.');
     }
+  }
+
+  /**
+   * Constructs a search URL using the user's configured default search engine
+   *
+   * @private
+   * @param {string} query - Search query text
+   * @returns {Promise<string>} Full search URL with encoded query
+   */
+  private async getSearchUrl(query: string): Promise<string> {
+    const providers: Record<string, string> = {
+      'com.bing': 'https://www.bing.com/search?q=',
+      'com.duckduckgo': 'https://duckduckgo.com/?q=',
+      'com.google': 'https://www.google.com/search?q=',
+      'com.yahoo': 'https://search.yahoo.com/search?p=',
+      'org.ecosia': 'https://www.ecosia.org/search?q='
+    };
+    let baseUrl = providers['com.duckduckgo'];
+    try {
+      const output = await new Promise<string>((resolve, reject) => {
+        execFile('defaults', ['read', '-g', 'NSPreferredWebServices'], (error, stdout) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(stdout);
+        });
+      });
+      const match = output.match(/NSProviderIdentifier\s*=\s*"([^"]+)"/);
+      if (match && providers[match[1]]) {
+        baseUrl = providers[match[1]];
+      }
+    } catch {
+      // Fall back to DuckDuckGo
+    }
+    return baseUrl + encodeURIComponent(query);
   }
 
   /**
@@ -144,23 +182,41 @@ export class Client {
    * Clicks an element on the page by its visible text content or CSS selector
    *
    * @param {string} text - The visible text to search for (case-insensitive partial match)
-   * @param {string} [selector] - CSS selector for the element to click
-   * @returns {Promise<string>} Description of the clicked element
+   * @param {string} [selector] - CSS selector to scope the search
+   * @param {string} [wait] - CSS selector to wait for after click
+   * @returns {Promise<{result: string, selectorFound?: boolean}>} Click result with optional wait status
    */
-  async clickElement(text: string, selector?: string): Promise<string> {
+  async clickElement(text: string, selector?: string, wait?: string): Promise<{ result: string; selectorFound?: boolean }> {
     this.assertActive();
     if (selector) {
       const escapedSelector = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const selectorScript = `(function() {
-        var el = document.querySelector('${escapedSelector}');
-        if (!el) return 'No element found for selector: ${escapedSelector}';
-        el.scrollIntoView({block: 'center'});
-        el.click();
-        return 'Clicked: ' + el.tagName.toLowerCase() + ' "' + (el.textContent || '').trim().substring(0, 80) + '"';
+        var searchText = '${escaped}'.toLowerCase();
+        var elements = document.querySelectorAll('${escapedSelector}');
+        if (elements.length === 0) return 'No element found for selector: ${escapedSelector}';
+        var best = null;
+        var bestLen = Infinity;
+        for (var i = 0; i < elements.length; i++) {
+          var el = elements[i];
+          var elText = (el.textContent || el.value || el.getAttribute('aria-label') || '').trim().toLowerCase();
+          if (elText.indexOf(searchText) !== -1 && elText.length < bestLen) {
+            best = el;
+            bestLen = elText.length;
+          }
+        }
+        if (!best) return 'No element found with text: ${escaped}';
+        best.scrollIntoView({block: 'center'});
+        best.click();
+        return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + (best.textContent || '').trim().substring(0, 80) + '"';
       })()`;
       const result = await this.executeScript(selectorScript);
       await new Promise((resolve) => setTimeout(resolve, 500));
-      return result;
+      if (wait) {
+        const selectorFound = await this.waitForSelector(wait);
+        return { result, selectorFound };
+      }
+      return { result };
     }
     const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const script = `(function() {
@@ -197,7 +253,11 @@ export class Client {
     })()`;
     const result = await this.executeScript(script);
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return result;
+    if (wait) {
+      const selectorFound = await this.waitForSelector(wait);
+      return { result, selectorFound };
+    }
+    return { result };
   }
 
   /**
@@ -219,7 +279,10 @@ export class Client {
    */
   async executeScript(script: string): Promise<any> {
     this.assertActive();
-    const wrapped = script.includes('return ') ? `(function(){${script}})()` : script;
+    const trimmed = script.trimStart();
+    const hasReturn = script.includes('return ');
+    const hasFunction = trimmed.startsWith('(function') || trimmed.startsWith('(() =>') || trimmed.startsWith('(()=>');
+    const wrapped = hasReturn && !hasFunction ? `(function(){${script}})()` : script;
     const escaped = wrapped.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     return await this.appleScript(`tell application "Safari" to do JavaScript "${escaped}" in current tab of window 1`);
   }
@@ -303,7 +366,7 @@ export class Client {
     }
     await this.appleScript('tell application "Safari" to activate');
     await this.appleScript('tell application "Safari" to make new document');
-    await this.appleScript(`tell application "Safari" to set bounds of window 1 to {0, 0, ${this.windowWidth}, ${this.windowHeight}}`);
+    await this.appleScript(`tell application "Safari" to set bounds of window 1 to {${this.windowBounds}, ${this.windowBounds + 30}, ${this.windowWidth + this.windowBounds}, ${this.windowHeight + this.windowBounds + 30}}`);
     this.active = true;
   }
 
@@ -317,6 +380,18 @@ export class Client {
   response(response: any, stringify: boolean = false): any {
     const text = stringify ? JSON.stringify(response) : response;
     return { content: [{ type: 'text', text }] };
+  }
+
+  /**
+   * Searches the web using the user's default search engine
+   *
+   * @param {string} query - Search query text
+   * @param {string} [selector] - CSS selector to wait for after page load
+   * @returns {Promise<boolean>} Whether the selector was found (true if no selector specified)
+   */
+  async search(query: string, selector?: string): Promise<boolean> {
+    const url = await this.getSearchUrl(query);
+    return await this.navigateTo(url, selector);
   }
 
   /**
@@ -373,13 +448,15 @@ export class Client {
    *
    * @param {string} text - The text to type
    * @param {string} [selector] - CSS selector for the target input
+   * @param {boolean} [append=false] - Whether to append to existing value
    * @param {boolean} [submit=false] - Whether to press Enter after typing
    * @returns {Promise<string>} Description of the action taken
    */
-  async typeText(text: string, selector?: string, submit: boolean = false): Promise<string> {
+  async typeText(text: string, selector?: string, append: boolean = false, submit: boolean = false): Promise<string> {
     this.assertActive();
     const escapedText = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const escapedSelector = selector ? selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+    const appendFlag = append ? 'true' : 'false';
     const submitFlag = submit ? 'true' : 'false';
     const script = `(function() {
       var el;
@@ -402,11 +479,12 @@ export class Client {
       if (!el) return 'No input element found';
       el.focus();
       el.scrollIntoView({block: 'center'});
+      var newVal = ${appendFlag} ? (el.value || '') + '${escapedText}' : '${escapedText}';
       var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
       if (nativeSetter && nativeSetter.set) {
-        nativeSetter.set.call(el, '${escapedText}');
+        nativeSetter.set.call(el, newVal);
       } else {
-        el.value = '${escapedText}';
+        el.value = newVal;
       }
       el.dispatchEvent(new Event('input', {bubbles: true}));
       el.dispatchEvent(new Event('change', {bubbles: true}));

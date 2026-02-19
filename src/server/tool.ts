@@ -34,7 +34,8 @@ export class McpTool {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'CSS selector for the element to click' },
-          text: { type: 'string', description: 'Visible text of the element to click' }
+          text: { type: 'string', description: 'Visible text of the element to click' },
+          wait: { type: 'string', description: 'CSS selector to wait for after click' }
         },
         required: ['text']
       }
@@ -51,7 +52,7 @@ export class McpTool {
   close(): Tool {
     return {
       name: 'close',
-      description: 'Close the Safari window',
+      description: 'Close the browser window',
       inputSchema: {
         type: 'object',
         properties: {}
@@ -97,6 +98,7 @@ export class McpTool {
       this.navigate(),
       this.open(),
       this.read(),
+      this.search(),
       this.screenshot(),
       this.type()
     ];
@@ -139,7 +141,7 @@ export class McpTool {
   open(): Tool {
     return {
       name: 'open',
-      description: 'Open a Safari window',
+      description: 'Open a browser window',
       inputSchema: {
         type: 'object',
         properties: {}
@@ -164,6 +166,28 @@ export class McpTool {
         properties: {
           selector: { type: 'string', description: 'CSS selector to scope text extraction' }
         }
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for searching the web
+   *
+   * Searches using the user's default search engine configured in Safari,
+   * returning search results in the browser.
+   *
+   * @returns {Tool} MCP tool definition for web search
+   */
+  search(): Tool {
+    return {
+      name: 'search',
+      description: "Search the web using browser's default search engine",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Search query' }
+        },
+        required: ['text']
       }
     };
   }
@@ -204,6 +228,7 @@ export class McpTool {
       inputSchema: {
         type: 'object',
         properties: {
+          append: { type: 'boolean', description: 'Append to existing value instead of replacing', default: false },
           selector: { type: 'string', description: 'CSS selector for the target input' },
           submit: { type: 'boolean', description: 'Submit form by pressing Enter after typing', default: false },
           text: { type: 'string', description: 'Text to type' }
