@@ -26,7 +26,7 @@
     "url": "git+https://github.com/axivo/mcp-safari.git"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/lib dist/",
     "clean": "rm -rf dist"
   },
   "dependencies": {

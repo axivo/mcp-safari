@@ -11,6 +11,7 @@ import { readFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { Browser } from '../lib/browser.js';
 
 /**
  * Safari AppleScript automation client
@@ -23,6 +24,7 @@ import { fileURLToPath } from 'url';
  */
 export class Client {
   private active: boolean = false;
+  private browser: Browser;
   private pageLoadTimeout: number;
   private windowBounds: number;
   private windowHeight: number;
@@ -32,6 +34,7 @@ export class Client {
    * Creates a new Client instance
    */
   constructor() {
+    this.browser = new Browser();
     this.pageLoadTimeout = parseInt(process.env.SAFARI_PAGE_TIMEOUT || '10000', 10);
     this.windowBounds = parseInt(process.env.SAFARI_WINDOW_BOUNDS || '20', 10);
     this.windowHeight = parseInt(process.env.SAFARI_WINDOW_HEIGHT || '1024', 10);
@@ -99,10 +102,49 @@ export class Client {
       if (match && providers[match[1]]) {
         baseUrl = providers[match[1]];
       }
-    } catch {
-      // Fall back to DuckDuckGo
-    }
+    } catch { }
     return baseUrl + encodeURIComponent(query);
+  }
+
+  /**
+   * Injects console error and warning capture into the current page
+   *
+   * Overrides console.error, console.warn, window.onerror, and
+   * unhandledrejection to capture errors with source context.
+   *
+   * @private
+   * @returns {Promise<void>}
+   */
+  private async injectErrorCapture(): Promise<void> {
+    await this.executeScript(this.browser.errorCapture());
+  }
+
+  /**
+   * Injects error capture early during page load to catch inline script errors
+   *
+   * Polls for the new document to appear (readyState changes to 'loading'),
+   * then injects error capture overrides before inline scripts execute.
+   * Best-effort — if the page parses faster than the polling interval,
+   * the post-load injection in navigateTo/goHistory serves as fallback.
+   *
+   * @private
+   * @returns {Promise<void>}
+   */
+  private async injectErrorCaptureEarly(): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < this.pageLoadTimeout) {
+      try {
+        const state = await this.executeScript('document.readyState');
+        if (state === 'loading' || state === 'interactive') {
+          await this.executeScript(this.browser.errorCapture());
+          return;
+        }
+        if (state === 'complete') {
+          return;
+        }
+      } catch { }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   }
 
   /**
@@ -171,7 +213,9 @@ export class Client {
   async goHistory(steps: number, selector?: string): Promise<boolean> {
     this.assertActive();
     await this.executeScript(`history.go(${steps})`);
+    await this.injectErrorCaptureEarly();
     await this.waitForPageLoad();
+    await this.injectErrorCapture();
     if (selector) {
       return await this.waitForSelector(selector);
     }
@@ -188,69 +232,9 @@ export class Client {
    */
   async clickElement(text: string, selector?: string, wait?: string): Promise<{ result: string; selectorFound?: boolean }> {
     this.assertActive();
-    if (selector) {
-      const escapedSelector = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const selectorScript = `(function() {
-        var searchText = '${escaped}'.toLowerCase();
-        var elements = document.querySelectorAll('${escapedSelector}');
-        if (elements.length === 0) return 'No element found for selector: ${escapedSelector}';
-        var best = null;
-        var bestLen = Infinity;
-        for (var i = 0; i < elements.length; i++) {
-          var el = elements[i];
-          var elText = (el.textContent || el.value || el.getAttribute('aria-label') || '').trim().toLowerCase();
-          if (elText.indexOf(searchText) !== -1 && elText.length < bestLen) {
-            best = el;
-            bestLen = elText.length;
-          }
-        }
-        if (!best) return 'No element found with text: ${escaped}';
-        best.scrollIntoView({block: 'center'});
-        best.click();
-        return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + (best.textContent || '').trim().substring(0, 80) + '"';
-      })()`;
-      const result = await this.executeScript(selectorScript);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      if (wait) {
-        const selectorFound = await this.waitForSelector(wait);
-        return { result, selectorFound };
-      }
-      return { result };
-    }
-    const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const script = `(function() {
-      var searchText = '${escaped}'.toLowerCase();
-      var selectors = ['a', 'button', '[role="button"]', '[role="link"]', '[role="menuitem"]', '[role="tab"]', 'input[type="submit"]', 'input[type="button"]', '[onclick]', 'label', 'summary'];
-      var best = null;
-      var bestLen = Infinity;
-      for (var i = 0; i < selectors.length; i++) {
-        var elements = document.querySelectorAll(selectors[i]);
-        for (var j = 0; j < elements.length; j++) {
-          var el = elements[j];
-          var elText = (el.textContent || el.value || el.getAttribute('aria-label') || '').trim().toLowerCase();
-          if (elText.indexOf(searchText) !== -1 && elText.length < bestLen) {
-            best = el;
-            bestLen = elText.length;
-          }
-        }
-      }
-      if (!best) {
-        var all = document.querySelectorAll('*');
-        for (var k = 0; k < all.length; k++) {
-          var el2 = all[k];
-          var elText2 = (el2.textContent || '').trim().toLowerCase();
-          if (elText2.indexOf(searchText) !== -1 && elText2.length < bestLen && el2.offsetParent !== null) {
-            best = el2;
-            bestLen = elText2.length;
-          }
-        }
-      }
-      if (!best) return 'No element found with text: ${escaped}';
-      best.scrollIntoView({block: 'center'});
-      best.click();
-      return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + (best.textContent || '').trim().substring(0, 80) + '"';
-    })()`;
+    const script = selector
+      ? this.browser.clickSelector(text, selector)
+      : this.browser.clickElement(text);
     const result = await this.executeScript(script);
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (wait) {
@@ -285,6 +269,21 @@ export class Client {
     const wrapped = hasReturn && !hasFunction ? `(function(){${script}})()` : script;
     const escaped = wrapped.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     return await this.appleScript(`tell application "Safari" to do JavaScript "${escaped}" in current tab of window 1`);
+  }
+
+  /**
+   * Gets captured console errors and warnings from the current page
+   *
+   * @returns {Promise<{errors: string[], warnings: string[]}>} Captured errors and warnings
+   */
+  async getConsoleErrors(): Promise<{ errors: string[]; warnings: string[] }> {
+    this.assertActive();
+    const result = await this.executeScript(this.browser.consoleErrors());
+    try {
+      return JSON.parse(result);
+    } catch {
+      return { errors: [], warnings: [] };
+    }
   }
 
   /**
@@ -332,7 +331,7 @@ export class Client {
    */
   async getPageInfo(): Promise<{ scrollHeight: number; innerHeight: number; pages: number }> {
     this.assertActive();
-    const result = await this.executeScript('JSON.stringify({scrollHeight:document.body.scrollHeight,innerHeight:window.innerHeight})');
+    const result = await this.executeScript(this.browser.pageInfo());
     const { scrollHeight, innerHeight } = JSON.parse(result);
     return { scrollHeight, innerHeight, pages: Math.ceil(scrollHeight / innerHeight) };
   }
@@ -348,7 +347,9 @@ export class Client {
     this.assertActive();
     const escaped = url.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     await this.appleScript(`tell application "Safari" to set URL of current tab of window 1 to "${escaped}"`);
+    await this.injectErrorCaptureEarly();
     await this.waitForPageLoad();
+    await this.injectErrorCapture();
     if (selector) {
       return await this.waitForSelector(selector);
     }
@@ -366,7 +367,10 @@ export class Client {
     }
     await this.appleScript('tell application "Safari" to activate');
     await this.appleScript('tell application "Safari" to make new document');
-    await this.appleScript(`tell application "Safari" to set bounds of window 1 to {${this.windowBounds}, ${this.windowBounds + 30}, ${this.windowWidth + this.windowBounds}, ${this.windowHeight + this.windowBounds + 30}}`);
+    const x = this.windowBounds;
+    const y = this.windowBounds + 30;
+    const bounds = `{${x}, ${y}, ${x + this.windowWidth}, ${y + this.windowHeight}}`;
+    await this.appleScript(`tell application "Safari" to set bounds of window 1 to ${bounds}`);
     this.active = true;
   }
 
@@ -454,51 +458,7 @@ export class Client {
    */
   async typeText(text: string, selector?: string, append: boolean = false, submit: boolean = false): Promise<string> {
     this.assertActive();
-    const escapedText = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const escapedSelector = selector ? selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
-    const appendFlag = append ? 'true' : 'false';
-    const submitFlag = submit ? 'true' : 'false';
-    const script = `(function() {
-      var el;
-      if ('${escapedSelector}') {
-        el = document.querySelector('${escapedSelector}');
-        if (!el) return 'No element found for selector: ${escapedSelector}';
-      } else {
-        el = document.activeElement;
-        if (!el || el === document.body || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && !el.isContentEditable)) {
-          var inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]), textarea');
-          el = null;
-          for (var i = 0; i < inputs.length; i++) {
-            if (inputs[i].offsetParent !== null) {
-              el = inputs[i];
-              break;
-            }
-          }
-        }
-      }
-      if (!el) return 'No input element found';
-      el.focus();
-      el.scrollIntoView({block: 'center'});
-      var newVal = ${appendFlag} ? (el.value || '') + '${escapedText}' : '${escapedText}';
-      var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
-      if (nativeSetter && nativeSetter.set) {
-        nativeSetter.set.call(el, newVal);
-      } else {
-        el.value = newVal;
-      }
-      el.dispatchEvent(new Event('input', {bubbles: true}));
-      el.dispatchEvent(new Event('change', {bubbles: true}));
-      var desc = el.tagName.toLowerCase() + (el.name ? '[name=' + el.name + ']' : '') + (el.id ? '#' + el.id : '');
-      if (${submitFlag}) {
-        var enterOpts = {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true};
-        el.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
-        el.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
-        el.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
-        if (el.form) el.form.submit();
-        return 'Typed and submitted in: ' + desc;
-      }
-      return 'Typed in: ' + desc;
-    })()`;
+    const script = this.browser.typeText(text, selector, append, submit);
     const result = await this.executeScript(script);
     if (submit) {
       await new Promise((resolve) => setTimeout(resolve, 500));

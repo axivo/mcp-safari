@@ -192,7 +192,15 @@ export class Mcp {
       : 'document.body.innerText';
     const text = await this.client.executeScript(textScript);
     const { pages } = await this.client.getPageInfo();
-    return { title, url, text, pages };
+    const response: Record<string, any> = { title, url, text, pages };
+    const { errors, warnings } = await this.client.getConsoleErrors();
+    if (errors.length) {
+      response.errors = errors;
+    }
+    if (warnings.length) {
+      response.warnings = warnings;
+    }
+    return response;
   }
 
   /**
