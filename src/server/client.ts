@@ -31,7 +31,7 @@ export class Client {
    * Creates a new Client instance
    */
   constructor() {
-    this.pageLoadTimeout = parseInt(process.env.SAFARI_PAGE_LOAD_TIMEOUT || '10000', 10);
+    this.pageLoadTimeout = parseInt(process.env.SAFARI_PAGE_TIMEOUT || '10000', 10);
     this.windowHeight = parseInt(process.env.SAFARI_WINDOW_HEIGHT || '1024', 10);
     this.windowWidth = parseInt(process.env.SAFARI_WINDOW_WIDTH || '1280', 10);
   }
@@ -104,25 +104,64 @@ export class Client {
   }
 
   /**
-   * Navigates through browser history by the specified number of steps
+   * Waits for an element matching a CSS selector to appear on the page
    *
-   * @param {number} steps - Number of steps (negative for back, positive for forward)
-   * @returns {Promise<void>}
+   * @private
+   * @param {string} selector - CSS selector to wait for
+   * @returns {Promise<boolean>} Whether the element was found within pageLoadTimeout
    */
-  async goHistory(steps: number): Promise<void> {
-    this.assertActive();
-    await this.executeScript(`history.go(${steps})`);
-    await this.waitForPageLoad();
+  private async waitForSelector(selector: string): Promise<boolean> {
+    const escaped = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const start = Date.now();
+    while (Date.now() - start < this.pageLoadTimeout) {
+      const found = await this.executeScript(`document.querySelector('${escaped}') !== null`);
+      if (found === 'true') {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
   }
 
   /**
-   * Clicks an element on the page by its visible text content
+   * Navigates through browser history by the specified number of steps
+   *
+   * @param {number} steps - Number of steps (negative for back, positive for forward)
+   * @param {string} [selector] - CSS selector to wait for after page load
+   * @returns {Promise<boolean>} Whether the selector was found (true if no selector specified)
+   */
+  async goHistory(steps: number, selector?: string): Promise<boolean> {
+    this.assertActive();
+    await this.executeScript(`history.go(${steps})`);
+    await this.waitForPageLoad();
+    if (selector) {
+      return await this.waitForSelector(selector);
+    }
+    return true;
+  }
+
+  /**
+   * Clicks an element on the page by its visible text content or CSS selector
    *
    * @param {string} text - The visible text to search for (case-insensitive partial match)
+   * @param {string} [selector] - CSS selector for the element to click
    * @returns {Promise<string>} Description of the clicked element
    */
-  async clickElement(text: string): Promise<string> {
+  async clickElement(text: string, selector?: string): Promise<string> {
     this.assertActive();
+    if (selector) {
+      const escapedSelector = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const selectorScript = `(function() {
+        var el = document.querySelector('${escapedSelector}');
+        if (!el) return 'No element found for selector: ${escapedSelector}';
+        el.scrollIntoView({block: 'center'});
+        el.click();
+        return 'Clicked: ' + el.tagName.toLowerCase() + ' "' + (el.textContent || '').trim().substring(0, 80) + '"';
+      })()`;
+      const result = await this.executeScript(selectorScript);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return result;
+    }
     const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const script = `(function() {
       var searchText = '${escaped}'.toLowerCase();
@@ -239,13 +278,18 @@ export class Client {
    * Navigates to a URL in the current Safari tab
    *
    * @param {string} url - URL to navigate to
-   * @returns {Promise<void>}
+   * @param {string} [selector] - CSS selector to wait for after page load
+   * @returns {Promise<boolean>} Whether the selector was found (true if no selector specified)
    */
-  async navigateTo(url: string): Promise<void> {
+  async navigateTo(url: string, selector?: string): Promise<boolean> {
     this.assertActive();
     const escaped = url.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     await this.appleScript(`tell application "Safari" to set URL of current tab of window 1 to "${escaped}"`);
     await this.waitForPageLoad();
+    if (selector) {
+      return await this.waitForSelector(selector);
+    }
+    return true;
   }
 
   /**
@@ -276,6 +320,25 @@ export class Client {
   }
 
   /**
+   * Scrolls the page to the specified viewport page number
+   *
+   * @param {number} page - Page number to scroll to (1-based)
+   * @returns {Promise<void>}
+   */
+  async scrollToPage(page: number = 1): Promise<void> {
+    this.assertActive();
+    if (page > 1) {
+      const { innerHeight, pages } = await this.getPageInfo();
+      const targetPage = Math.min(page, pages);
+      const scrollY = (targetPage - 1) * innerHeight;
+      await this.executeScript(`window.scrollTo(0, ${scrollY})`);
+    } else {
+      await this.executeScript('window.scrollTo(0, 0)');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  /**
    * Captures a screenshot of the Safari window at the specified page
    *
    * @param {number} page - Page number to capture (1-based)
@@ -283,16 +346,7 @@ export class Client {
    */
   async takeScreenshot(page: number = 1): Promise<string> {
     this.assertActive();
-    if (page > 1) {
-      const { innerHeight, pages } = await this.getPageInfo();
-      const targetPage = Math.min(page, pages);
-      const scrollY = (targetPage - 1) * innerHeight;
-      await this.executeScript(`window.scrollTo(0, ${scrollY})`);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    } else {
-      await this.executeScript('window.scrollTo(0, 0)');
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
+    await this.scrollToPage(page);
     const windowId = await this.jxa(`
       const app = Application("Safari");
       const windows = app.windows();

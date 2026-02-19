@@ -20,6 +20,7 @@ import { McpTool } from './tool.js';
 
 interface ClickArgs {
   text: string;
+  selector?: string;
 }
 
 interface ExecuteArgs {
@@ -27,9 +28,15 @@ interface ExecuteArgs {
 }
 
 interface NavigateArgs {
-  url?: string;
   direction?: 'back' | 'forward';
+  page?: number;
+  selector?: string;
   steps?: number;
+  url?: string;
+}
+
+interface ReadArgs {
+  selector?: string;
 }
 
 interface ScreenshotArgs {
@@ -88,7 +95,7 @@ export class Mcp {
     if (error) {
       return error;
     }
-    return await this.client.clickElement(args.text);
+    return await this.client.clickElement(args.text, args.selector);
   }
 
   /**
@@ -126,18 +133,26 @@ export class Mcp {
    * @returns {Promise<any>} Tool execution response
    */
   private async handleNavigate(args: NavigateArgs): Promise<any> {
+    let selectorFound: boolean | undefined;
     if (args.url) {
-      await this.client.navigateTo(args.url);
+      selectorFound = await this.client.navigateTo(args.url, args.selector);
     } else if (args.direction) {
       const steps = args.direction === 'back' ? -(args.steps!) : args.steps!;
-      await this.client.goHistory(steps);
+      selectorFound = await this.client.goHistory(steps, args.selector);
+    } else if (args.page) {
+      await this.client.scrollToPage(args.page);
     } else {
-      return 'Missing required arguments: url or direction';
+      return 'Missing required arguments: url, direction, or page';
     }
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
+    const readyState = await this.client.executeScript('document.readyState');
     const { pages } = await this.client.getPageInfo();
-    return { title, url, pages };
+    const response: Record<string, any> = { title, url, readyState, pages };
+    if (args.selector) {
+      response.selectorFound = selectorFound;
+    }
+    return response;
   }
 
   /**
@@ -155,12 +170,17 @@ export class Mcp {
    * Handles read tool requests
    *
    * @private
+   * @param {ReadArgs} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleRead(): Promise<any> {
+  private async handleRead(args: ReadArgs): Promise<any> {
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
-    const text = await this.client.executeScript('document.body.innerText');
+    const escaped = args.selector ? args.selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+    const textScript = args.selector
+      ? `(document.querySelector('${escaped}') || {}).innerText || ''`
+      : 'document.body.innerText';
+    const text = await this.client.executeScript(textScript);
     const { pages } = await this.client.getPageInfo();
     return { title, url, text, pages };
   }
@@ -197,7 +217,13 @@ export class Mcp {
    */
   private async handleScreenshot(args: ScreenshotArgs): Promise<any> {
     const base64Png = await this.client.takeScreenshot(args.page!);
-    return this.client.imageResponse(base64Png);
+    const { scrollHeight, innerHeight, pages } = await this.client.getPageInfo();
+    return {
+      content: [
+        { type: 'image', data: base64Png, mimeType: 'image/png' },
+        { type: 'text', text: JSON.stringify({ scrollHeight, innerHeight, pages }) }
+      ]
+    };
   }
 
   /**

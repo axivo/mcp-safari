@@ -19,9 +19,9 @@ import { Tool } from '@modelcontextprotocol/sdk/types.js';
  */
 export class McpTool {
   /**
-   * Creates MCP tool for clicking elements by visible text
+   * Creates MCP tool for clicking elements by visible text or CSS selector
    *
-   * Finds and clicks elements matching the specified text content,
+   * Finds and clicks elements matching the specified text content or CSS selector,
    * supporting links, buttons, and other clickable elements.
    *
    * @returns {Tool} MCP tool definition for clicking elements
@@ -33,6 +33,7 @@ export class McpTool {
       inputSchema: {
         type: 'object',
         properties: {
+          selector: { type: 'string', description: 'CSS selector for the element to click' },
           text: { type: 'string', description: 'Visible text of the element to click' }
         },
         required: ['text']
@@ -105,7 +106,8 @@ export class McpTool {
    * Creates MCP tool for navigating to a URL or through browser history
    *
    * Navigates Safari to the specified URL, or backward/forward through
-   * browser history. Returns the page title, final URL, and viewport page count.
+   * browser history. Optionally waits for a CSS selector after page load.
+   * Returns the page title, final URL, ready state, and viewport page count.
    *
    * @returns {Tool} MCP tool definition for URL navigation
    */
@@ -117,6 +119,8 @@ export class McpTool {
         type: 'object',
         properties: {
           direction: { type: 'string', enum: ['back', 'forward'], description: 'Navigate back or forward in browser history' },
+          page: { type: 'number', description: 'Scroll to a specific viewport page number' },
+          selector: { type: 'string', description: 'CSS selector to wait for after page load' },
           steps: { type: 'number', description: 'Number of steps for back/forward navigation', default: 1 },
           url: { type: 'string', description: 'URL to navigate to' }
         }
@@ -147,7 +151,7 @@ export class McpTool {
    * Creates MCP tool for reading page content
    *
    * Extracts the page title, current URL, and visible text content
-   * from the current page.
+   * from the current page or a specific element.
    *
    * @returns {Tool} MCP tool definition for page content reading
    */
@@ -157,7 +161,9 @@ export class McpTool {
       description: 'Get the page title, URL, and extracted text content',
       inputSchema: {
         type: 'object',
-        properties: {}
+        properties: {
+          selector: { type: 'string', description: 'CSS selector to scope text extraction' }
+        }
       }
     };
   }
