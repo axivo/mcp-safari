@@ -121,7 +121,7 @@ export class McpTool {
         type: 'object',
         properties: {
           direction: { type: 'string', enum: ['back', 'forward'], description: 'Navigate back or forward in browser history' },
-          page: { type: 'number', description: 'Scroll to a specific viewport page number' },
+          page: { type: 'number', description: 'Scroll to a specific viewport-sized page number' },
           selector: { type: 'string', description: 'CSS selector to wait for after page load' },
           steps: { type: 'number', description: 'Number of steps for back/forward navigation', default: 1 },
           url: { type: 'string', description: 'URL to navigate to' }
@@ -160,11 +160,32 @@ export class McpTool {
   read(): Tool {
     return {
       name: 'read',
-      description: 'Get the page title, URL, and extracted text content',
+      description: 'Get the page title, URL, full text content, and count for viewport-sized screenshots',
       inputSchema: {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'CSS selector to scope text extraction' }
+        }
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for capturing page screenshots
+   *
+   * Captures a screenshot of the specified viewport page,
+   * returning it as a base64 PNG image.
+   *
+   * @returns {Tool} MCP tool definition for page screenshot capture
+   */
+  screenshot(): Tool {
+    return {
+      name: 'screenshot',
+      description: 'Capture the screenshot for a specific viewport-sized page',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          page: { type: 'number', description: 'Page number to capture', default: 1 }
         }
       }
     };
@@ -188,27 +209,6 @@ export class McpTool {
           text: { type: 'string', description: 'Search query' }
         },
         required: ['text']
-      }
-    };
-  }
-
-  /**
-   * Creates MCP tool for capturing page screenshots
-   *
-   * Captures a screenshot of the specified viewport page,
-   * returning it as a base64 PNG image.
-   *
-   * @returns {Tool} MCP tool definition for page screenshot capture
-   */
-  screenshot(): Tool {
-    return {
-      name: 'screenshot',
-      description: 'Optional page screenshot to visualize images and specific page elements',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          page: { type: 'number', description: 'Page number to capture', default: 1 }
-        }
       }
     };
   }

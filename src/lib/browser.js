@@ -35,16 +35,27 @@ export class Browser {
   }
 
   /**
-   * Builds a script to click an element by visible text content
+   * Builds a script to click an element by visible text or image alt text
    *
    * Searches prioritized interactive elements first, then falls back to all
    * visible elements. Uses shortest-text-wins heuristic to avoid parent containers.
+   * Checks textContent, value, aria-label, alt attribute, and child img alt text.
    *
    * @param {string} text - Text to search for (case-insensitive partial match)
    * @returns {string} Browser script string
    */
   clickElement(text) {
     function script(searchText) {
+      function getText(el) {
+        var text = el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('alt') || '';
+        if (!text.trim()) {
+          var img = el.querySelector('img[alt]');
+          if (img) {
+            text = img.getAttribute('alt') || '';
+          }
+        }
+        return text.trim().toLowerCase();
+      }
       var selectors = [
         'a', 'button', '[role="button"]', '[role="link"]', '[role="menuitem"]',
         '[role="tab"]', 'input[type="submit"]', 'input[type="button"]',
@@ -56,7 +67,7 @@ export class Browser {
         var elements = document.querySelectorAll(selectors[i]);
         for (var j = 0; j < elements.length; j++) {
           var el = elements[j];
-          var elText = (el.textContent || el.value || el.getAttribute('aria-label') || '').trim().toLowerCase();
+          var elText = getText(el);
           if (elText.indexOf(searchText) !== -1 && elText.length < bestLen) {
             best = el;
             bestLen = elText.length;
@@ -67,7 +78,7 @@ export class Browser {
         var all = document.querySelectorAll('*');
         for (var k = 0; k < all.length; k++) {
           var el2 = all[k];
-          var elText2 = (el2.textContent || '').trim().toLowerCase();
+          var elText2 = getText(el2);
           if (elText2.indexOf(searchText) !== -1 && elText2.length < bestLen && el2.offsetParent !== null) {
             best = el2;
             bestLen = elText2.length;
@@ -77,9 +88,9 @@ export class Browser {
       if (!best) {
         return 'No element found with text: ' + searchText;
       }
-      best.scrollIntoView({block: 'center'});
+      best.scrollIntoView({ block: 'center' });
       best.click();
-      return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + (best.textContent || '').trim().substring(0, 80) + '"';
+      return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + getText(best).substring(0, 80) + '"';
     }
     return this.serialize(script, text.toLowerCase());
   }
@@ -87,8 +98,9 @@ export class Browser {
   /**
    * Builds a script to click an element by CSS selector scoped text search
    *
-   * Searches elements matching the CSS selector for visible text content.
+   * Searches elements matching the CSS selector for visible text or image alt text.
    * Uses shortest-text-wins heuristic to avoid parent containers.
+   * Checks textContent, value, aria-label, alt attribute, and child img alt text.
    *
    * @param {string} text - Text to search for (case-insensitive partial match)
    * @param {string} selector - CSS selector to scope the search
@@ -96,6 +108,16 @@ export class Browser {
    */
   clickSelector(text, selector) {
     function script(searchText, selector) {
+      function getText(el) {
+        var text = el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('alt') || '';
+        if (!text.trim()) {
+          var img = el.querySelector('img[alt]');
+          if (img) {
+            text = img.getAttribute('alt') || '';
+          }
+        }
+        return text.trim().toLowerCase();
+      }
       var elements = document.querySelectorAll(selector);
       if (elements.length === 0) {
         return 'No element found for selector: ' + selector;
@@ -104,7 +126,7 @@ export class Browser {
       var bestLen = Infinity;
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
-        var elText = (el.textContent || el.value || el.getAttribute('aria-label') || '').trim().toLowerCase();
+        var elText = getText(el);
         if (elText.indexOf(searchText) !== -1 && elText.length < bestLen) {
           best = el;
           bestLen = elText.length;
@@ -113,9 +135,9 @@ export class Browser {
       if (!best) {
         return 'No element found with text: ' + searchText;
       }
-      best.scrollIntoView({block: 'center'});
+      best.scrollIntoView({ block: 'center' });
       best.click();
-      return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + (best.textContent || '').trim().substring(0, 80) + '"';
+      return 'Clicked: ' + best.tagName.toLowerCase() + ' "' + getText(best).substring(0, 80) + '"';
     }
     return this.serialize(script, text.toLowerCase(), selector);
   }
@@ -156,27 +178,27 @@ export class Browser {
       window.__safariWarnings = [];
       var origError = console.error;
       var origWarn = console.warn;
-      console.error = function() {
+      console.error = function () {
         var args = Array.prototype.slice.call(arguments);
-        var msg = args.map(function(a) {
+        var msg = args.map(function (a) {
           return typeof a === 'object' ? JSON.stringify(a) : String(a);
         }).join(' ');
         window.__safariErrors.push(msg);
         origError.apply(console, arguments);
       };
-      console.warn = function() {
+      console.warn = function () {
         var args = Array.prototype.slice.call(arguments);
-        var msg = args.map(function(a) {
+        var msg = args.map(function (a) {
           return typeof a === 'object' ? JSON.stringify(a) : String(a);
         }).join(' ');
         window.__safariWarnings.push(msg);
         origWarn.apply(console, arguments);
       };
-      window.onerror = function(message, source, lineno, colno) {
+      window.onerror = function (message, source, lineno, colno) {
         var loc = source ? ' (' + source.split('/').pop() + ':' + lineno + ':' + colno + ')' : '';
         window.__safariErrors.push(String(message) + loc);
       };
-      window.addEventListener('unhandledrejection', function(e) {
+      window.addEventListener('unhandledrejection', function (e) {
         var reason = e.reason;
         var msg = reason instanceof Error ? reason.message : String(reason);
         window.__safariErrors.push('Unhandled rejection: ' + msg);
@@ -245,7 +267,7 @@ export class Browser {
         return 'No input element found';
       }
       el.focus();
-      el.scrollIntoView({block: 'center'});
+      el.scrollIntoView({ block: 'center' });
       var newVal = append ? (el.value || '') + text : text;
       var nativeSetter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype, 'value'
@@ -257,11 +279,11 @@ export class Browser {
       } else {
         el.value = newVal;
       }
-      el.dispatchEvent(new Event('input', {bubbles: true}));
-      el.dispatchEvent(new Event('change', {bubbles: true}));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
       var desc = el.tagName.toLowerCase() + (el.name ? '[name=' + el.name + ']' : '') + (el.id ? '#' + el.id : '');
       if (submit) {
-        var enterOpts = {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true};
+        var enterOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
         el.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
         el.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
         el.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
