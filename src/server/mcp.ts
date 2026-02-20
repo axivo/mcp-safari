@@ -103,20 +103,35 @@ export class Mcp {
     if (!args.text && !args.selector && !args.key && (args.x === undefined || args.y === undefined)) {
       return 'Missing required arguments: text, selector, key, or x/y coordinates';
     }
+    const beforeTitle = await this.client.getTitle();
+    const beforeUrl = await this.client.getUrl();
+    const { pages: beforePages } = await this.client.getPageInfo();
+    let result: string;
+    let selectorFound: boolean | undefined;
     if (args.key) {
-      const result = await this.client.keypress(args.key, args.selector);
-      const title = await this.client.getTitle();
-      const url = await this.client.getUrl();
-      const { pages } = await this.client.getPageInfo();
-      return { result, title, url, pages };
+      result = await this.client.keypress(args.key, args.selector);
+    } else {
+      ({ result, selectorFound } = await this.client.clickElement(args.selector, args.text, args.wait, args.x, args.y));
     }
-    const { result, selectorFound } = await this.client.clickElement(args.selector, args.text, args.wait, args.x, args.y);
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
     const { pages } = await this.client.getPageInfo();
     const response: Record<string, any> = { result, title, url, pages };
     if (args.wait) {
       response.selectorFound = selectorFound;
+    }
+    const changes: string[] = [];
+    if (beforeTitle !== title) {
+      changes.push('title changed');
+    }
+    if (beforeUrl !== url) {
+      changes.push('url changed');
+    }
+    if (beforePages !== pages) {
+      changes.push(`pages changed from ${beforePages} to ${pages}`);
+    }
+    if (changes.length > 0) {
+      response.changes = changes;
     }
     return response;
   }
