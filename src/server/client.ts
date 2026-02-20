@@ -81,11 +81,11 @@ export class Client {
    */
   private async getSearchUrl(query: string): Promise<string> {
     const providers: Record<string, string> = {
-      'com.bing': 'https://www.bing.com/search?q=',
+      'com.bing.www': 'https://www.bing.com/search?q=',
       'com.duckduckgo': 'https://duckduckgo.com/?q=',
-      'com.google': 'https://www.google.com/search?q=',
-      'com.yahoo': 'https://search.yahoo.com/search?p=',
-      'org.ecosia': 'https://www.ecosia.org/search?q='
+      'com.google.www': 'https://www.google.com/search?q=',
+      'com.yahoo.www': 'https://search.yahoo.com/search?p=',
+      'org.ecosia.www': 'https://www.ecosia.org/search?q='
     };
     let baseUrl = providers['com.duckduckgo'];
     try {
@@ -204,37 +204,27 @@ export class Client {
   }
 
   /**
-   * Navigates through browser history by the specified number of steps
-   *
-   * @param {number} steps - Number of steps (negative for back, positive for forward)
-   * @param {string} [selector] - CSS selector to wait for after page load
-   * @returns {Promise<boolean>} Whether the selector was found (true if no selector specified)
-   */
-  async goHistory(steps: number, selector?: string): Promise<boolean> {
-    this.assertActive();
-    await this.executeScript(`history.go(${steps})`);
-    await this.injectErrorCaptureEarly();
-    await this.waitForPageLoad();
-    await this.injectErrorCapture();
-    if (selector) {
-      return await this.waitForSelector(selector);
-    }
-    return true;
-  }
-
-  /**
    * Clicks an element on the page by its visible text content or CSS selector
    *
-   * @param {string} text - The visible text to search for (case-insensitive partial match)
    * @param {string} [selector] - CSS selector to scope the search
+   * @param {string} [text] - The visible text to search for (case-insensitive partial match)
    * @param {string} [wait] - CSS selector to wait for after click
+   * @param {number} [x] - X coordinate (pixels from left of viewport)
+   * @param {number} [y] - Y coordinate (pixels from top of viewport)
    * @returns {Promise<{result: string, selectorFound?: boolean}>} Click result with optional wait status
    */
-  async clickElement(text: string, selector?: string, wait?: string): Promise<{ result: string; selectorFound?: boolean }> {
+  async clickElement(selector?: string, text?: string, wait?: string, x?: number, y?: number): Promise<{ result: string; selectorFound?: boolean }> {
     this.assertActive();
-    const script = selector
-      ? this.browser.clickSelector(text, selector)
-      : this.browser.clickElement(text);
+    let script: string;
+    if (text && selector) {
+      script = this.browser.clickSelector(text, selector);
+    } else if (text) {
+      script = this.browser.clickElement(text);
+    } else if (x !== undefined && y !== undefined) {
+      script = this.browser.clickCoordinates(x, y);
+    } else {
+      script = this.browser.clickDirect(selector!);
+    }
     const result = await this.executeScript(script);
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (wait) {
@@ -287,6 +277,18 @@ export class Client {
   }
 
   /**
+   * Gets page dimensions and calculates the number of viewport pages
+   *
+   * @returns {Promise<{innerHeight: number, scrollHeight: number, pages: number}>} Page dimension info
+   */
+  async getPageInfo(): Promise<{ innerHeight: number; scrollHeight: number; pages: number }> {
+    this.assertActive();
+    const result = await this.executeScript(this.browser.pageInfo());
+    const { innerHeight, scrollHeight } = JSON.parse(result);
+    return { innerHeight, scrollHeight, pages: Math.ceil(scrollHeight / innerHeight) };
+  }
+
+  /**
    * Gets the current page title
    *
    * @returns {Promise<string>} Page title
@@ -304,6 +306,25 @@ export class Client {
   async getUrl(): Promise<string> {
     this.assertActive();
     return await this.appleScript('tell application "Safari" to return URL of current tab of window 1');
+  }
+
+  /**
+   * Navigates through browser history by the specified number of steps
+   *
+   * @param {number} steps - Number of steps (negative for back, positive for forward)
+   * @param {string} [selector] - CSS selector to wait for after page load
+   * @returns {Promise<boolean>} Whether the selector was found (true if no selector specified)
+   */
+  async goHistory(steps: number, selector?: string): Promise<boolean> {
+    this.assertActive();
+    await this.executeScript(`history.go(${steps})`);
+    await this.injectErrorCaptureEarly();
+    await this.waitForPageLoad();
+    await this.injectErrorCapture();
+    if (selector) {
+      return await this.waitForSelector(selector);
+    }
+    return true;
   }
 
   /**
@@ -325,15 +346,18 @@ export class Client {
   }
 
   /**
-   * Gets page dimensions and calculates the number of viewport pages
+   * Dispatches a keyboard event on the page
    *
-   * @returns {Promise<{scrollHeight: number, innerHeight: number, pages: number}>} Page dimension info
+   * @param {string} key - Key name (e.g., 'Escape', 'ArrowRight', 'Enter')
+   * @param {string} [selector] - CSS selector for target element
+   * @returns {Promise<string>} Description of the action taken
    */
-  async getPageInfo(): Promise<{ scrollHeight: number; innerHeight: number; pages: number }> {
+  async keypress(key: string, selector?: string): Promise<string> {
     this.assertActive();
-    const result = await this.executeScript(this.browser.pageInfo());
-    const { scrollHeight, innerHeight } = JSON.parse(result);
-    return { scrollHeight, innerHeight, pages: Math.ceil(scrollHeight / innerHeight) };
+    const script = this.browser.keypress(key, selector);
+    const result = await this.executeScript(script);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return result;
   }
 
   /**
@@ -423,9 +447,11 @@ export class Client {
    * @param {number} page - Page number to capture (1-based)
    * @returns {Promise<string>} Base64-encoded PNG screenshot
    */
-  async takeScreenshot(page: number = 1): Promise<string> {
+  async takeScreenshot(page?: number): Promise<string> {
     this.assertActive();
-    await this.scrollToPage(page);
+    if (page) {
+      await this.scrollToPage(page);
+    }
     const windowId = await this.jxa(`
       const app = Application("Safari");
       const windows = app.windows();

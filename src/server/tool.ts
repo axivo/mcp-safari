@@ -19,25 +19,41 @@ import { Tool } from '@modelcontextprotocol/sdk/types.js';
  */
 export class McpTool {
   /**
-   * Creates MCP tool for clicking elements by visible text or CSS selector
+   * Creates MCP tool for clicking elements on the browser window
    *
-   * Finds and clicks elements matching the specified text content or CSS selector,
-   * supporting links, buttons, and other clickable elements.
+   * Finds and clicks elements matching visible text, image alt text, aria-label,
+   * or CSS selector, supporting links, buttons, images, and other clickable elements.
    *
    * @returns {Tool} MCP tool definition for clicking elements
    */
   click(): Tool {
     return {
       name: 'click',
-      description: 'Click an element on the page by its visible text content',
+      description: 'Click an element on the browser window',
       inputSchema: {
         type: 'object',
         properties: {
-          selector: { type: 'string', description: 'CSS selector for the element to click' },
-          text: { type: 'string', description: 'Visible text of the element to click' },
-          wait: { type: 'string', description: 'CSS selector to wait for after click' }
-        },
-        required: ['text']
+          key: { type: 'string', description: 'Key to press (e.g., Escape, ArrowRight, ArrowLeft, Enter, Tab)' },
+          selector: { type: 'string', description: 'CSS selector to click when no text provided or to scope the text search' },
+          text: { type: 'string', description: 'Text to match - visible text, image alt text, or aria-label' },
+          wait: { type: 'string', description: 'CSS selector to wait for after click' },
+          x: { type: 'number', description: 'X coordinate (pixels from left of viewport) to click at' },
+          y: { type: 'number', description: 'Y coordinate (pixels from top of viewport) to click at' }
+        }
+      },
+      _meta: {
+        usage: [
+          'Match aria-label attributes for buttons like Next, Previous, Close using `text` parameter',
+          'Never guess CSS selectors based on assumed page structure',
+          'Prefer `text` over `selector` parameter for matching elements',
+          'Read the page before clicking to identify available elements',
+          'Take a screenshot after clicking only when visual verification is needed',
+          'Use descriptive text fragments from read output to avoid ambiguous matches',
+          'Try first `key` parameter to press ArrowRight, ArrowLeft, Enter, Escape, or Tab on current page',
+          'Try first `key: "Escape"` then `text: "Close"` parameter values to close overlays or panels on current page',
+          'Use `text: "Next"` and `text: "Previous"` parameter values to navigate between items in image detail panels and carousels',
+          'Use `x` and `y` coordinates from screenshots to click visual elements without text'
+        ]
       }
     };
   }
@@ -78,6 +94,13 @@ export class McpTool {
           script: { type: 'string', description: 'JavaScript code to execute' }
         },
         required: ['script']
+      },
+      _meta: {
+        usage: [
+          'Avoid using `execute` tool to inspect DOM structure for click targets',
+          'Prefer `click` tool with `text` parameter and `read` tool for page interaction',
+          'Reserve `execute` tool for operations not covered by other tools'
+        ]
       }
     };
   }
@@ -98,8 +121,8 @@ export class McpTool {
       this.navigate(),
       this.open(),
       this.read(),
-      this.search(),
       this.screenshot(),
+      this.search(),
       this.type()
     ];
   }
@@ -126,6 +149,13 @@ export class McpTool {
           steps: { type: 'number', description: 'Number of steps for back/forward navigation', default: 1 },
           url: { type: 'string', description: 'URL to navigate to' }
         }
+      },
+      _meta: {
+        usage: [
+          'Read the page after navigation to understand available content',
+          'Use `direction` parameter for history navigation instead of re-entering URLs',
+          'Use `page` parameter to scroll to specific viewport sections'
+        ]
       }
     };
   }
@@ -141,10 +171,15 @@ export class McpTool {
   open(): Tool {
     return {
       name: 'open',
-      description: 'Open a browser window',
+      description: 'Open a browser window and read `_meta.usage` tools guidance',
       inputSchema: {
         type: 'object',
         properties: {}
+      },
+      _meta: {
+        usage: [
+          'Stop and process all `_meta.usage` tools guidance before using any tools to avoid mistakes'
+        ]
       }
     };
   }
@@ -166,6 +201,12 @@ export class McpTool {
         properties: {
           selector: { type: 'string', description: 'CSS selector to scope text extraction' }
         }
+      },
+      _meta: {
+        usage: [
+          'Read the page after navigation to understand available content',
+          'Use `selector` parameter to scope extraction to specific page sections'
+        ]
       }
     };
   }
@@ -185,8 +226,16 @@ export class McpTool {
       inputSchema: {
         type: 'object',
         properties: {
-          page: { type: 'number', description: 'Page number to capture', default: 1 }
+          page: { type: 'number', description: 'Page number to capture', default: 0 }
         }
+      },
+      _meta: {
+        usage: [
+          'Prefer `read` tool over `screenshot` for identifying page elements and content',
+          'Use `page` parameter to scroll to and capture a specific viewport-sized page',
+          'Use `page: 0` parameter to capture current viewport without scrolling',
+          'Use `screenshot` tool for visual verification of images and layouts'
+        ]
       }
     };
   }
@@ -209,6 +258,11 @@ export class McpTool {
           text: { type: 'string', description: 'Search query' }
         },
         required: ['text']
+      },
+      _meta: {
+        usage: [
+          'Read the page after searching to extract results'
+        ]
       }
     };
   }
@@ -234,6 +288,12 @@ export class McpTool {
           text: { type: 'string', description: 'Text to type' }
         },
         required: ['text']
+      },
+      _meta: {
+        usage: [
+          'Read the page before typing to identify available input fields',
+          'Use `submit` parameter to submit forms instead of separate click actions'
+        ]
       }
     };
   }
