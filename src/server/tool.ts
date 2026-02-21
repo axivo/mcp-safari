@@ -226,14 +226,13 @@ export class McpTool {
       inputSchema: {
         type: 'object',
         properties: {
-          page: { type: 'number', description: 'Page number to capture', default: 0 }
+          page: { type: 'number', description: 'Page number to capture', default: 1 }
         }
       },
       _meta: {
         usage: [
           'Prefer `read` tool over `screenshot` for identifying page elements and content',
           'Use `page` parameter to scroll to and capture a specific viewport-sized page',
-          'Use `page: 0` parameter to capture current viewport without scrolling',
           'Use `screenshot` tool for visual verification of images and layouts'
         ]
       }

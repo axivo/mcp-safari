@@ -449,7 +449,7 @@ export class Client {
    */
   async takeScreenshot(page?: number): Promise<string> {
     this.assertActive();
-    if (page) {
+    if (page && page > 1) {
       await this.scrollToPage(page);
     }
     const windowId = await this.jxa(`
