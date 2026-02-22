@@ -4,6 +4,12 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-02-21
+
+### Changed
+
+- Prompt instructions to enforce tools usage review before browser interaction
+
 ## [1.0.0] - 2026-02-21
 
 ### Added
