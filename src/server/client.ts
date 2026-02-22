@@ -11,6 +11,7 @@ import { readFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { Automation } from '../lib/automation.js';
 import { Browser } from '../lib/browser.js';
 
 /**
@@ -24,6 +25,7 @@ import { Browser } from '../lib/browser.js';
  */
 export class Client {
   private active: boolean = false;
+  private automation: Automation;
   private browser: Browser;
   private pageLoadTimeout: number;
   private windowBounds: number;
@@ -34,6 +36,7 @@ export class Client {
    * Creates a new Client instance
    */
   constructor() {
+    this.automation = new Automation();
     this.browser = new Browser();
     this.pageLoadTimeout = parseInt(process.env.SAFARI_PAGE_TIMEOUT || '10000', 10);
     this.windowBounds = parseInt(process.env.SAFARI_WINDOW_BOUNDS || '20', 10);
@@ -241,8 +244,19 @@ export class Client {
    */
   async closeSession(): Promise<void> {
     this.assertActive();
-    await this.appleScript('tell application "Safari" to close window 1');
+    await this.appleScript(this.automation.closeWindow());
     this.active = false;
+  }
+
+  /**
+   * Closes a specific tab by index without closing the window
+   *
+   * @param {number} index - Tab index (1-based)
+   * @returns {Promise<void>}
+   */
+  async closeTab(index: number): Promise<void> {
+    this.assertActive();
+    await this.appleScript(this.automation.closeTab(index));
   }
 
   /**
@@ -257,8 +271,7 @@ export class Client {
     const hasReturn = script.includes('return ');
     const hasFunction = trimmed.startsWith('(function') || trimmed.startsWith('(() =>') || trimmed.startsWith('(()=>');
     const wrapped = hasReturn && !hasFunction ? `(function(){${script}})()` : script;
-    const escaped = wrapped.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return await this.appleScript(`tell application "Safari" to do JavaScript "${escaped}" in current tab of window 1`);
+    return await this.appleScript(this.automation.executeScript(wrapped));
   }
 
   /**
@@ -295,7 +308,7 @@ export class Client {
    */
   async getTitle(): Promise<string> {
     this.assertActive();
-    return await this.appleScript('tell application "Safari" to return name of current tab of window 1');
+    return await this.appleScript(this.automation.getTitle());
   }
 
   /**
@@ -305,7 +318,7 @@ export class Client {
    */
   async getUrl(): Promise<string> {
     this.assertActive();
-    return await this.appleScript('tell application "Safari" to return URL of current tab of window 1');
+    return await this.appleScript(this.automation.getUrl());
   }
 
   /**
@@ -361,6 +374,21 @@ export class Client {
   }
 
   /**
+   * Lists all open tabs in the current window
+   *
+   * @returns {Promise<{index: number, title: string, url: string, active: boolean}[]>} Array of tab info
+   */
+  async listTabs(): Promise<{ active: boolean; index: number; title: string; url: string }[]> {
+    this.assertActive();
+    const result = await this.appleScript(this.automation.listTabs());
+    try {
+      return JSON.parse(result);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Navigates to a URL in the current Safari tab
    *
    * @param {string} url - URL to navigate to
@@ -369,8 +397,7 @@ export class Client {
    */
   async navigateTo(url: string, selector?: string): Promise<boolean> {
     this.assertActive();
-    const escaped = url.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    await this.appleScript(`tell application "Safari" to set URL of current tab of window 1 to "${escaped}"`);
+    await this.appleScript(this.automation.navigateTo(url));
     await this.injectErrorCaptureEarly();
     await this.waitForPageLoad();
     await this.injectErrorCapture();
@@ -378,6 +405,22 @@ export class Client {
       return await this.waitForSelector(selector);
     }
     return true;
+  }
+
+  /**
+   * Opens a new tab in the current window, optionally navigating to a URL
+   *
+   * @param {string} [url] - URL to open in the new tab
+   * @returns {Promise<void>}
+   */
+  async openTab(url?: string): Promise<void> {
+    this.assertActive();
+    await this.appleScript(this.automation.createTab(url));
+    if (url) {
+      await this.injectErrorCaptureEarly();
+      await this.waitForPageLoad();
+      await this.injectErrorCapture();
+    }
   }
 
   /**
@@ -389,12 +432,11 @@ export class Client {
     if (this.active) {
       throw new Error('A session is already active. Use the close tool first.');
     }
-    await this.appleScript('tell application "Safari" to activate');
-    await this.appleScript('tell application "Safari" to make new document');
+    await this.appleScript(this.automation.activate());
+    await this.appleScript(this.automation.createDocument());
     const x = this.windowBounds;
     const y = this.windowBounds + 30;
-    const bounds = `{${x}, ${y}, ${x + this.windowWidth}, ${y + this.windowHeight}}`;
-    await this.appleScript(`tell application "Safari" to set bounds of window 1 to ${bounds}`);
+    await this.appleScript(this.automation.setBounds(x, y, this.windowWidth, this.windowHeight));
     this.active = true;
   }
 
@@ -442,6 +484,17 @@ export class Client {
   }
 
   /**
+   * Switches to a specific tab by index
+   *
+   * @param {number} index - Tab index (1-based)
+   * @returns {Promise<void>}
+   */
+  async switchTab(index: number): Promise<void> {
+    this.assertActive();
+    await this.appleScript(this.automation.switchTab(index));
+  }
+
+  /**
    * Captures a screenshot of the Safari window at the specified page
    *
    * @param {number} page - Page number to capture (1-based)
@@ -452,12 +505,7 @@ export class Client {
     if (page && page > 1) {
       await this.scrollToPage(page);
     }
-    const windowId = await this.jxa(`
-      const app = Application("Safari");
-      const windows = app.windows();
-      if (windows.length === 0) throw new Error("No Safari window");
-      windows[0].id();
-    `);
+    const windowId = await this.jxa(this.automation.windowId());
     const tmpFile = join(tmpdir(), `safari-screenshot-${Date.now()}.png`);
     await new Promise<void>((resolve, reject) => {
       execFile('screencapture', ['-l', windowId, '-o', '-x', tmpFile], (error) => {
