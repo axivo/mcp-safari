@@ -53,7 +53,7 @@ All variables are optional — defaults apply if not set:
 
 Here are practical examples of how to use the Safari MCP server with natural language prompts:
 
-- "_Open Safari and review the tools usage, then navigate to https://example.com_"
+- "_Open Safari and review the tools usage, then go to `example.com`_"
 - "_Open Safari and review the tools usage, then search for `example query`_"
 - "_Take a screenshot of the current page_"
 - "_Read the page content to understand what's on the page_"
@@ -64,9 +64,12 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 - "_Scroll down to page 3 of this article_"
 - "_Search for 'Claude AI' and click the first result_"
 - "_List all open browser tabs_"
-- "_Open a new browser tab and go to https://example.com_"
+- "_Open a new browser tab and go to `example.com`_"
 - "_Switch to the first browser tab_"
 - "_Close the second browser tab_"
+
+> [!NOTE]
+> The "review the tools usage" instruction helps Claude pause and process the `_meta.usage` guidelines before interacting with the browser.
 
 ### MCP Tools
 
