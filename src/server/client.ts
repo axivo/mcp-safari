@@ -24,7 +24,7 @@ import { Browser } from '../lib/browser.js';
  * @class Client
  */
 export class Client {
-  private active: boolean = false;
+  private active: boolean;
   private automation: Automation;
   private browser: Browser;
   private pageLoadTimeout: number;
@@ -36,6 +36,7 @@ export class Client {
    * Creates a new Client instance
    */
   constructor() {
+    this.active = false;
     this.automation = new Automation();
     this.browser = new Browser();
     this.pageLoadTimeout = parseInt(process.env.SAFARI_PAGE_TIMEOUT || '10000', 10);

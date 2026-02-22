@@ -5,7 +5,6 @@
  */
 
 export class Automation {
-  private scripts: Map<string, string>;
   activate(): string;
   closeTab(index: number): string;
   closeWindow(): string;

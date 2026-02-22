@@ -109,9 +109,10 @@ export class Mcp {
     if (!args.text && !args.selector && !args.key && (args.x === undefined || args.y === undefined)) {
       return 'Missing required arguments: text, selector, key, or x/y coordinates';
     }
-    const beforeTitle = await this.client.getTitle();
-    const beforeUrl = await this.client.getUrl();
-    const { pages: beforePages } = await this.client.getPageInfo();
+    const openTitle = await this.client.getTitle();
+    const openUrl = await this.client.getUrl();
+    const { pages: openPages } = await this.client.getPageInfo();
+    const openTabs = (await this.client.listTabs()).length;
     let result: string;
     let selectorFound: boolean | undefined;
     if (args.key) {
@@ -122,21 +123,26 @@ export class Mcp {
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
     const { pages } = await this.client.getPageInfo();
-    const response: Record<string, any> = { result, title, url, pages };
+    const tabs = await this.client.listTabs();
+    const response: Record<string, any> = { result, title, url, pages, tabs: tabs.length };
     if (args.wait) {
       response.selectorFound = selectorFound;
     }
     const changes: string[] = [];
-    if (beforeTitle !== title) {
+    if (openTitle !== title) {
       changes.push('title changed');
     }
-    if (beforeUrl !== url) {
+    if (openUrl !== url) {
       changes.push('url changed');
     }
-    if (beforePages !== pages) {
-      changes.push(`pages changed from ${beforePages} to ${pages}`);
+    if (openPages !== pages) {
+      changes.push(`pages changed from ${openPages} to ${pages}`);
     }
-    if (changes.length > 0) {
+    if (openTabs !== tabs.length) {
+      changes.push(`tabs changed from ${openTabs} to ${tabs.length}`);
+      response.tabList = tabs;
+    }
+    if (changes.length) {
       response.changes = changes;
     }
     return response;
@@ -150,7 +156,7 @@ export class Mcp {
    */
   private async handleClose(): Promise<any> {
     await this.client.closeSession();
-    return 'Safari window closed';
+    return { tabs: 0 };
   }
 
   /**
@@ -192,7 +198,8 @@ export class Mcp {
     const url = await this.client.getUrl();
     const readyState = await this.client.executeScript('document.readyState');
     const { pages } = await this.client.getPageInfo();
-    const response: Record<string, any> = { title, url, readyState, pages };
+    const tabs = (await this.client.listTabs()).length;
+    const response: Record<string, any> = { title, url, readyState, pages, tabs };
     if (args.selector) {
       response.selectorFound = selectorFound;
     }
@@ -209,7 +216,7 @@ export class Mcp {
     await this.client.openSession();
     const tools = this.setServerTools().map(({ tool }) => tool);
     return {
-      result: 'Safari window opened',
+      tabs: 1,
       tools
     };
   }
@@ -265,6 +272,24 @@ export class Mcp {
   }
 
   /**
+   * Handles screenshot tool requests
+   *
+   * @private
+   * @param {ScreenshotArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleScreenshot(args: ScreenshotArgs): Promise<any> {
+    const base64Png = await this.client.takeScreenshot(args.page);
+    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+    return {
+      content: [
+        { type: 'image', data: base64Png, mimeType: 'image/png' },
+        { type: 'text', text: JSON.stringify({ innerHeight, scrollHeight, pages }) }
+      ]
+    };
+  }
+
+  /**
    * Handles search tool requests
    *
    * @private
@@ -281,25 +306,8 @@ export class Mcp {
     const url = await this.client.getUrl();
     const readyState = await this.client.executeScript('document.readyState');
     const { pages } = await this.client.getPageInfo();
-    return { title, url, readyState, pages };
-  }
-
-  /**
-   * Handles screenshot tool requests
-   *
-   * @private
-   * @param {ScreenshotArgs} args - Tool arguments
-   * @returns {Promise<any>} Tool execution response
-   */
-  private async handleScreenshot(args: ScreenshotArgs): Promise<any> {
-    const base64Png = await this.client.takeScreenshot(args.page);
-    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
-    return {
-      content: [
-        { type: 'image', data: base64Png, mimeType: 'image/png' },
-        { type: 'text', text: JSON.stringify({ innerHeight, scrollHeight, pages }) }
-      ]
-    };
+    const tabs = (await this.client.listTabs()).length;
+    return { title, url, readyState, pages, tabs };
   }
 
   /**
