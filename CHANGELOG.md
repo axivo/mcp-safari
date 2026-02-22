@@ -4,6 +4,13 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-02-22
+
+### Added
+
+- Tab count awareness in `click`, `navigate`, `open`, and `search` tool responses
+- Tab list detection in `click` tool when tab count changes
+
 ## [1.0.2] - 2026-02-22
 
 ### Added
