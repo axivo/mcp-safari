@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `window` tool for managing browser tabs with list, switch, open, and close actions
+- `window` tool prompt examples for tab management
 
 ### Changed
 
