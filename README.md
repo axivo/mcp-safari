@@ -18,8 +18,9 @@ A MCP (Model Context Protocol) server for visual web access through Safari.
 
 ### Prerequisites
 
-- **macOS** → System Settings → Privacy & Security → Screen Recording must be enabled for the terminal app
-- **Safari** → Settings → Developer → "Allow JavaScript from Apple Events" option must be enabled
+- **macOS** → System Settings → Desktop & Dock → Windows → "Prefer tabs when opening documents" option must be set to **Always**
+- **macOS** → System Settings → Privacy & Security → Screen & System Audio Recording → Terminal app must be enabled
+- **Safari** → Settings → Developer → Automation → "Allow JavaScript from Apple Events" option must be enabled
 
 ### MCP Server Configuration
 
