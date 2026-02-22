@@ -156,7 +156,7 @@ export class Mcp {
    */
   private async handleClose(): Promise<any> {
     await this.client.closeSession();
-    return { tabs: 0 };
+    return { content: [{ type: 'text', text: JSON.stringify({ tabs: 0 }) }] };
   }
 
   /**
