@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+/**
+ * Safari MCP Server Entry Point
+ *
+ * Main entry point for the Safari MCP server application. Handles
+ * server initialization and transport setup.
+ *
+ * @module index
+ * @author AXIVO
+ * @license BSD-3-Clause
+ */
+
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { Mcp } from './server/mcp.js';
+
+/**
+ * Main entry point for the Safari MCP Server
+ *
+ * Initializes the McpServer and establishes stdio transport
+ * for communication with Claude agents.
+ *
+ * @async
+ * @function main
+ * @throws {Error} When server initialization fails
+ */
+async function main(): Promise<void> {
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error.message);
+    if (error.message.includes('EPIPE') || (error as any).code === 'EPIPE') {
+      console.error('EPIPE error caught - continuing operation');
+      return;
+    }
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    if (reason && typeof reason === 'object' &&
+      ((reason as any).code === 'EPIPE' || (reason as Error).message?.includes('EPIPE'))) {
+      console.error('EPIPE rejection caught - continuing operation');
+      return;
+    }
+  });
+  const mcpServer = new Mcp();
+  const transport = new StdioServerTransport();
+  try {
+    await mcpServer.connect(transport);
+  } catch (error) {
+    console.error('Failed to connect MCP transport:', error);
+  }
+}
+
+main().catch((error) => {
+  console.error('Fatal error in main():', error);
+  process.exit(1);
+});
