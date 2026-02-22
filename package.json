@@ -1,15 +1,15 @@
 {
   "name": "@axivo/mcp-safari",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "MCP server for visual web access through Safari",
+  "description": "MCP server for Safari web browser integration",
   "keywords": [
+    "applescript",
     "browser",
     "mcp",
     "model-context-protocol",
     "safari",
-    "server",
-    "webdriver"
+    "server"
   ],
   "license": "BSD-3-Clause",
   "author": "AXIVO",
