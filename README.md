@@ -32,8 +32,8 @@ Add to `mcp.json` servers configuration:
       "command": "npx",
       "args": ["-y", "@axivo/mcp-safari"],
       "env": {
-        "SAFARI_WINDOW_HEIGHT": "800",
-        "SAFARI_WINDOW_WIDTH": "600"
+        "SAFARI_WINDOW_HEIGHT": "600",
+        "SAFARI_WINDOW_WIDTH": "800"
       }
     }
   }
@@ -53,8 +53,8 @@ All variables are optional — defaults apply if not set:
 
 Here are practical examples of how to use the Safari MCP server with natural language prompts:
 
-- "_Open Safari and navigate to https://example.com_"
-- "_Open Safari and search for `example query`_"
+- "_Open Safari and review the tools usage, then navigate to https://example.com_"
+- "_Open Safari and review the tools usage, then search for `example query`_"
 - "_Take a screenshot of the current page_"
 - "_Read the page content to understand what's on the page_"
 - "_Click the 'Sign In' button_"
@@ -62,7 +62,7 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 - "_Go back to the previous page_"
 - "_Navigate forward two steps in browser history_"
 - "_Scroll down to page 3 of this article_"
-- "_Search DuckDuckGo for 'Claude AI' and click the first result_"
+- "_Search for 'Claude AI' and click the first result_"
 
 ### MCP Tools
 
