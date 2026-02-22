@@ -287,11 +287,11 @@ export class Mcp {
    */
   private async handleScreenshot(args: ScreenshotArgs): Promise<any> {
     const base64Png = await this.client.takeScreenshot(args.page);
-    const { scrollHeight, innerHeight, pages } = await this.client.getPageInfo();
+    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
     return {
       content: [
         { type: 'image', data: base64Png, mimeType: 'image/png' },
-        { type: 'text', text: JSON.stringify({ scrollHeight, innerHeight, pages }) }
+        { type: 'text', text: JSON.stringify({ innerHeight, scrollHeight, pages }) }
       ]
     };
   }
