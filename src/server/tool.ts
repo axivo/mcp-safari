@@ -123,7 +123,8 @@ export class McpTool {
       this.read(),
       this.screenshot(),
       this.search(),
-      this.type()
+      this.type(),
+      this.window()
     ];
   }
 
@@ -292,6 +293,38 @@ export class McpTool {
         usage: [
           'Read the page before typing to identify available input fields',
           'Use `submit` parameter to submit forms instead of separate click actions'
+        ]
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for managing browser window tabs
+   *
+   * Lists, switches, opens, or closes individual tabs within
+   * the browser window without affecting other tabs.
+   *
+   * @returns {Tool} MCP tool definition for window tab management
+   */
+  window(): Tool {
+    return {
+      name: 'window',
+      description: 'Manage browser window tabs',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['close', 'list', 'open', 'switch'], description: 'Tab action to perform' },
+          index: { type: 'number', description: 'Tab index for close and switch actions' },
+          url: { type: 'string', description: 'URL to open in a new tab (open action only)' }
+        },
+        required: ['action']
+      },
+      _meta: {
+        usage: [
+          'Use `action: "close"` parameter value with `index` parameter to close a specific tab without closing the window',
+          'Use `action: "list"` parameter value to see all open tabs with their index, title, URL, and which is active',
+          'Use `action: "open"` parameter value to create a new tab, optionally with a URL',
+          'Use `action: "switch"` parameter value with `index` to change the active tab'
         ]
       }
     };

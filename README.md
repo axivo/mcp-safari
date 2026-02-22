@@ -63,6 +63,10 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 - "_Navigate forward two steps in browser history_"
 - "_Scroll down to page 3 of this article_"
 - "_Search for 'Claude AI' and click the first result_"
+- "_List all open browser tabs_"
+- "_Open a new browser tab and go to https://example.com_"
+- "_Switch to the first browser tab_"
+- "_Close the second browser tab_"
 
 ### MCP Tools
 
@@ -126,3 +130,12 @@ Here are practical examples of how to use the Safari MCP server with natural lan
      - `selector` (string): CSS selector for the target input
      - `submit` (boolean, default: false): Submit form by pressing Enter after typing
    - Returns: Description of the action taken
+
+10. `window`
+    - Manage browser window tabs
+    - Required inputs:
+      - `action` (string: `close`, `list`, `open`, `switch`): Tab action to perform
+    - Optional inputs:
+      - `index` (number): Tab index (1-based) for close and switch actions
+      - `url` (string): URL to open in a new tab (open action only)
+    - Returns: Array of tabs with active status, index, title, and URL

@@ -43,12 +43,12 @@ interface ReadArgs {
   selector?: string;
 }
 
-interface SearchArgs {
-  text: string;
-}
-
 interface ScreenshotArgs {
   page?: number;
+}
+
+interface SearchArgs {
+  text: string;
 }
 
 interface TypeArgs {
@@ -56,6 +56,12 @@ interface TypeArgs {
   append?: boolean;
   selector?: string;
   submit?: boolean;
+}
+
+interface WindowArgs {
+  action: 'close' | 'list' | 'open' | 'switch';
+  index?: number;
+  url?: string;
 }
 
 type ToolHandler = (args: any) => Promise<any>;
@@ -322,6 +328,41 @@ export class Mcp {
   }
 
   /**
+   * Handles window tool requests
+   *
+   * @private
+   * @param {WindowArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleWindow(args: WindowArgs): Promise<any> {
+    const error = this.validate(args, ['action']);
+    if (error) {
+      return error;
+    }
+    switch (args.action) {
+      case 'list':
+        return { tabs: await this.client.listTabs() };
+      case 'switch':
+        if (args.index === undefined) {
+          return 'Missing required argument: index';
+        }
+        await this.client.switchTab(args.index);
+        return { tabs: await this.client.listTabs() };
+      case 'close':
+        if (args.index === undefined) {
+          return 'Missing required argument: index';
+        }
+        await this.client.closeTab(args.index);
+        return { tabs: await this.client.listTabs() };
+      case 'open':
+        await this.client.openTab(args.url);
+        return { tabs: await this.client.listTabs() };
+      default:
+        return `Unknown action: ${args.action}`;
+    }
+  }
+
+  /**
    * Maps tool definitions to corresponding handler functions
    *
    * Creates comprehensive mapping between tool definitions and handlers,
@@ -340,7 +381,8 @@ export class Mcp {
       { tool: this.tool.read(), handler: this.handleRead.bind(this) },
       { tool: this.tool.screenshot(), handler: this.handleScreenshot.bind(this) },
       { tool: this.tool.search(), handler: this.handleSearch.bind(this) },
-      { tool: this.tool.type(), handler: this.handleType.bind(this) }
+      { tool: this.tool.type(), handler: this.handleType.bind(this) },
+      { tool: this.tool.window(), handler: this.handleWindow.bind(this) }
     ];
   }
 
