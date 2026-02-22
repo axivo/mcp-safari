@@ -4,6 +4,22 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-02-22
+
+### Added
+
+- Security policy with scope, threat vectors, and supply chain integrity documentation
+- Socket Security badge for npm package security scoring
+
+### Changed
+
+- AppleScript templates to uniform block format in `automation.js` library
+- Search URL construction from hardcoded provider map to macOS `NSProviderIdentifier` dynamic domain reversal
+
+### Fixed
+
+- New tab opening blank instead of Safari Start Page
+
 ## [1.0.4] - 2026-02-22
 
 ### Fixed

@@ -72,7 +72,7 @@ export class Client {
    */
   private assertActive(): void {
     if (!this.active) {
-      throw new Error('No active session. Use the open tool first.');
+      throw new Error('No active session, use `open` tool first.');
     }
   }
 
@@ -84,30 +84,19 @@ export class Client {
    * @returns {Promise<string>} Full search URL with encoded query
    */
   private async getSearchUrl(query: string): Promise<string> {
-    const providers: Record<string, string> = {
-      'com.bing.www': 'https://www.bing.com/search?q=',
-      'com.duckduckgo': 'https://duckduckgo.com/?q=',
-      'com.google.www': 'https://www.google.com/search?q=',
-      'com.yahoo.www': 'https://search.yahoo.com/search?p=',
-      'org.ecosia.www': 'https://www.ecosia.org/search?q='
-    };
-    let baseUrl = providers['com.duckduckgo'];
-    try {
-      const output = await new Promise<string>((resolve, reject) => {
-        execFile('defaults', ['read', '-g', 'NSPreferredWebServices'], (error, stdout) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve(stdout);
-        });
+    const output = await new Promise<string>((resolve, reject) => {
+      execFile('defaults', ['read', '-g', 'NSPreferredWebServices'], (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout);
       });
-      const match = output.match(/NSProviderIdentifier\s*=\s*"([^"]+)"/);
-      if (match && providers[match[1]]) {
-        baseUrl = providers[match[1]];
-      }
-    } catch { }
-    return baseUrl + encodeURIComponent(query);
+    });
+    const match = output.match(/NSProviderIdentifier\s*=\s*"([^"]+)"/);
+    const domain = match![1].split('.').reverse().join('.');
+    const url = new URL(`/search?q=${encodeURIComponent(query)}`, `https://${domain}`);
+    return url.toString();
   }
 
   /**
@@ -431,7 +420,7 @@ export class Client {
    */
   async openSession(): Promise<void> {
     if (this.active) {
-      throw new Error('A session is already active. Use the close tool first.');
+      throw new Error('A session is already active, use `close` tool first.');
     }
     await this.appleScript(this.automation.activate());
     await this.appleScript(this.automation.createDocument());

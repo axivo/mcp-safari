@@ -12,31 +12,54 @@
 
 const osaScripts = `
 --- activate
-tell application "Safari" to activate
+tell application "Safari"
+  activate
+end tell
 
 --- closeTab
-tell application "Safari" to close tab {{INDEX}} of window 1
+tell application "Safari"
+  close tab {{INDEX}} of window 1
+end tell
 
 --- closeWindow
-tell application "Safari" to close window 1
+tell application "Safari"
+  close window 1
+end tell
 
 --- createDocument
-tell application "Safari" to make new document
+tell application "Safari"
+  make new document
+end tell
 
 --- createTab
-tell application "Safari" to tell window 1 to set current tab to (make new tab)
+tell application "Safari"
+  tell window 1
+    set current tab to (make new tab)
+    set URL of current tab to "favorites://"
+  end tell
+end tell
 
 --- createTabWithUrl
-tell application "Safari" to tell window 1 to set current tab to (make new tab with properties {URL:"{{URL}}"})
+tell application "Safari"
+  tell window 1
+    set current tab to (make new tab with properties {URL:"{{URL}}"})
+  end tell
+end tell
 
 --- executeScript
-tell application "Safari" to do JavaScript "{{SCRIPT}}" in current tab of window 1
+tell application "Safari"
+  do JavaScript "{{SCRIPT}}" in current tab of window 1
+end tell
 
 --- getTitle
-tell application "Safari" to return name of current tab of window 1
+tell application "Safari"
+  return name of current tab of window 1
+end tell
 
 --- getUrl
-tell application "Safari" to return URL of current tab of window 1
+tell application "Safari"
+  return URL of current tab of window 1
+end tell
 
 --- listTabs
 tell application "Safari"
@@ -61,18 +84,28 @@ tell application "Safari"
 end tell
 
 --- navigateTo
-tell application "Safari" to set URL of current tab of window 1 to "{{URL}}"
+tell application "Safari"
+  set URL of current tab of window 1 to "{{URL}}"
+end tell
 
 --- setBounds
-tell application "Safari" to set bounds of window 1 to {{{X}}, {{Y}}, {{RIGHT}}, {{BOTTOM}}}
+tell application "Safari"
+  set bounds of window 1 to {{{X}}, {{Y}}, {{RIGHT}}, {{BOTTOM}}}
+end tell
 
 --- switchTab
-tell application "Safari" to tell window 1 to set current tab to tab {{INDEX}}
+tell application "Safari"
+  tell window 1
+    set current tab to tab {{INDEX}}
+  end tell
+end tell
 
 --- windowId
 const app = Application("Safari");
 const windows = app.windows();
-if (windows.length === 0) throw new Error("No Safari window");
+if (windows.length === 0) {
+  throw new Error("No active session, use \`open\` tool first.");
+}
 windows[0].id();
 `;
 
