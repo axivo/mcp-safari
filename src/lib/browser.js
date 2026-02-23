@@ -321,7 +321,8 @@ export class Browser {
     function script() {
       return JSON.stringify({
         innerHeight: window.innerHeight,
-        scrollHeight: document.body.scrollHeight
+        scrollHeight: document.body.scrollHeight,
+        scrollOffset: window.scrollY
       });
     }
     return this.serialize(script);
