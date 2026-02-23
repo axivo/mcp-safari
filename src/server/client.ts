@@ -282,13 +282,13 @@ export class Client {
   /**
    * Gets page dimensions and calculates the number of viewport pages
    *
-   * @returns {Promise<{innerHeight: number, scrollHeight: number, pages: number}>} Page dimension info
+   * @returns {Promise<{innerHeight: number, scrollHeight: number, scrollOffset: number, pages: number}>} Page dimension info
    */
-  async getPageInfo(): Promise<{ innerHeight: number; scrollHeight: number; pages: number }> {
+  async getPageInfo(): Promise<{ innerHeight: number; scrollHeight: number; scrollOffset: number; pages: number }> {
     this.assertActive();
     const result = await this.executeScript(this.browser.pageInfo());
-    const { innerHeight, scrollHeight } = JSON.parse(result);
-    return { innerHeight, scrollHeight, pages: Math.ceil(scrollHeight / innerHeight) };
+    const { innerHeight, scrollHeight, scrollOffset } = JSON.parse(result);
+    return { innerHeight, scrollHeight, scrollOffset, pages: Math.ceil(scrollHeight / innerHeight) };
   }
 
   /**
@@ -455,6 +455,20 @@ export class Client {
   }
 
   /**
+   * Scrolls the page by a pixel amount in the specified direction
+   *
+   * @param {string} direction - Scroll direction ('up' or 'down')
+   * @param {number} pixels - Number of pixels to scroll
+   * @returns {Promise<void>}
+   */
+  async scrollByPixels(direction: 'up' | 'down', pixels: number): Promise<void> {
+    this.assertActive();
+    const delta = direction === 'up' ? -pixels : pixels;
+    await this.executeScript(`window.scrollBy(0, ${delta})`);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  /**
    * Scrolls the page to the specified viewport page number
    *
    * @param {number} page - Page number to scroll to (1-based)
@@ -485,16 +499,12 @@ export class Client {
   }
 
   /**
-   * Captures a screenshot of the Safari window at the specified page
+   * Captures a screenshot of the current Safari viewport
    *
-   * @param {number} page - Page number to capture (1-based)
    * @returns {Promise<string>} Base64-encoded PNG screenshot
    */
-  async takeScreenshot(page?: number): Promise<string> {
+  async takeScreenshot(): Promise<string> {
     this.assertActive();
-    if (page && page > 1) {
-      await this.scrollToPage(page);
-    }
     const windowId = await this.jxa(this.automation.windowId());
     const tmpFile = join(tmpdir(), `safari-screenshot-${Date.now()}.png`);
     await new Promise<void>((resolve, reject) => {

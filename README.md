@@ -12,7 +12,7 @@ A MCP (Model Context Protocol) server for visual web access through Safari.
 
 - **Visual Web Access**: Capture viewport screenshots for visual page inspection
 - **Full Authentication State**: Controls the user's actual Safari session with cookies and login state preserved
-- **Paged Screenshots**: Navigate multi-page content with viewport-based pagination
+- **Viewport Scrolling**: Scroll by pixel amount or jump to viewport-sized pages for precise positioning
 - **Interaction Tools**: Click elements by visible text and type into input fields with framework reactivity support
 - **Browser History**: Navigate back and forward through browser history
 - **Console Error Capture**: Two-phase injection catches console errors and warnings during and after page load
@@ -62,7 +62,8 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 - "_Type my email into the login form and submit_"
 - "_Go back to the previous page_"
 - "_Navigate forward two steps in browser history_"
-- "_Scroll down to page 3 of this article_"
+- "_Scroll down 500 pixels_"
+- "_Scroll to page 3 of this article_"
 - "_Search for 'Claude AI' and click the first result_"
 - "_List all open browser tabs_"
 - "_Open a new browser tab and go to `example.com`_"
@@ -75,13 +76,15 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 ### MCP Tools
 
 1. `click`
-   - Click an element on the page by its visible text content
-   - Required inputs:
-     - `text` (string): Visible text of the element to click
+   - Click an element on the browser window
    - Optional inputs:
-     - `selector` (string): CSS selector to scope the element search
+     - `key` (string): Key to press (e.g., Escape, ArrowRight, ArrowLeft, Enter, Tab)
+     - `selector` (string): CSS selector to click when no text provided or to scope the text search
+     - `text` (string): Text to match - visible text, image alt text, or aria-label
      - `wait` (string): CSS selector to wait for after click
-   - Returns: Description of the clicked element, with optional selector found status
+     - `x` (number): X coordinate (pixels from left of viewport) to click at
+     - `y` (number): Y coordinate (pixels from top of viewport) to click at
+   - Returns: Click result with page title, URL, viewport pages, tabs, and detected changes
 
 2. `close`
    - Close the browser window
@@ -94,52 +97,57 @@ Here are practical examples of how to use the Safari MCP server with natural lan
    - Returns: Script execution result
 
 4. `navigate`
-   - Navigate to a URL, through browser history (back/forward), or scroll to a viewport page
+   - Navigate to a URL or through browser history (back/forward)
    - Optional inputs:
-     - `url` (string): URL to navigate to
      - `direction` (string: `back` or `forward`): Navigate back or forward in browser history
-     - `page` (number): Scroll to a specific viewport page number
      - `selector` (string): CSS selector to wait for after page load
      - `steps` (number, default: 1): Number of steps for back/forward navigation
-   - Returns: Page title, final URL, ready state, and number of viewport pages
+     - `url` (string): URL to navigate to
+   - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
 
 5. `open`
-   - Open a browser window
-   - Returns: Session creation confirmation
+   - Open a browser window and read `_meta.usage` tools guidance
+   - Returns: Tab count and complete tool definitions with usage guidance
 
 6. `read`
-   - Get the page title, URL, and extracted text content
+   - Get the page title, URL, full text content, and count for viewport-sized screenshots
    - Optional inputs:
      - `selector` (string): CSS selector to scope text extraction
-   - Returns: Page title, current URL, text content, number of viewport pages, and any captured console errors/warnings
+   - Returns: Page title, URL, text content, viewport pages, and any captured console errors/warnings
 
-7. `search`
+7. `screenshot`
+   - Capture a screenshot of the current browser viewport
+   - Returns: Base64-encoded PNG screenshot with viewport dimensions
+
+8. `scroll`
+   - Scroll to specific viewport page or by direction with pixel amount
+   - Optional inputs:
+     - `direction` (string: `up` or `down`): Scroll direction (scrolls one viewport page when used alone)
+     - `page` (number): Scroll to a specific viewport-sized page number
+     - `pixels` (number): Number of pixels to scroll (used with direction for fine-grained control)
+   - Returns: Viewport dimensions, scroll offset, and viewport pages
+
+9. `search`
    - Search the web using browser's default search engine
    - Required inputs:
      - `text` (string): Search query
-   - Returns: Page title, final URL, ready state, and number of viewport pages
+   - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
 
-8. `screenshot`
-   - Optional page screenshot to visualize images and specific page elements
-   - Optional inputs:
-     - `page` (number, default: 1): Page number to capture
-   - Returns: Base64-encoded PNG screenshot with viewport dimensions
+10. `type`
+    - Type text into a page input field
+    - Required inputs:
+      - `text` (string): Text to type
+    - Optional inputs:
+      - `append` (boolean, default: false): Append to existing value instead of replacing
+      - `selector` (string): CSS selector for the target input
+      - `submit` (boolean, default: false): Submit form by pressing Enter after typing
+    - Returns: Description of the action taken
 
-9. `type`
-   - Type text into a page input field
-   - Required inputs:
-     - `text` (string): Text to type
-   - Optional inputs:
-     - `append` (boolean, default: false): Append to existing value instead of replacing
-     - `selector` (string): CSS selector for the target input
-     - `submit` (boolean, default: false): Submit form by pressing Enter after typing
-   - Returns: Description of the action taken
-
-10. `window`
+11. `window`
     - Manage browser window tabs
     - Required inputs:
       - `action` (string: `close`, `list`, `open`, `switch`): Tab action to perform
     - Optional inputs:
-      - `index` (number): Tab index (1-based) for close and switch actions
+      - `index` (number): Tab index for close and switch actions
       - `url` (string): URL to open in a new tab (open action only)
     - Returns: Array of tabs with active status, index, title, and URL

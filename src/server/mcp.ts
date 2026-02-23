@@ -33,7 +33,6 @@ interface ExecuteArgs {
 
 interface NavigateArgs {
   direction?: 'back' | 'forward';
-  page?: number;
   selector?: string;
   steps?: number;
   url?: string;
@@ -43,8 +42,10 @@ interface ReadArgs {
   selector?: string;
 }
 
-interface ScreenshotArgs {
+interface ScrollArgs {
+  direction?: 'up' | 'down';
   page?: number;
+  pixels?: number;
 }
 
 interface SearchArgs {
@@ -189,17 +190,14 @@ export class Mcp {
     } else if (args.direction) {
       const steps = args.direction === 'back' ? -(args.steps!) : args.steps!;
       selectorFound = await this.client.goHistory(steps, args.selector);
-    } else if (args.page) {
-      await this.client.scrollToPage(args.page);
     } else {
-      return 'Missing required arguments: url, direction, or page';
+      return 'Missing required arguments: url or direction';
     }
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
-    const readyState = await this.client.executeScript('document.readyState');
-    const { pages } = await this.client.getPageInfo();
+    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
     const tabs = (await this.client.listTabs()).length;
-    const response: Record<string, any> = { title, url, readyState, pages, tabs };
+    const response: Record<string, any> = { title, url, pages, innerHeight, scrollHeight, tabs };
     if (args.selector) {
       response.selectorFound = selectorFound;
     }
@@ -272,14 +270,38 @@ export class Mcp {
   }
 
   /**
+   * Handles scroll tool requests
+   *
+   * @private
+   * @param {ScrollArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleScroll(args: ScrollArgs): Promise<any> {
+    if (args.page !== undefined && (args.direction || args.pixels !== undefined)) {
+      return 'Invalid arguments: provide either page or direction with pixels, not both';
+    }
+    if (args.page !== undefined) {
+      await this.client.scrollToPage(args.page);
+    } else if (args.direction && args.pixels !== undefined) {
+      await this.client.scrollByPixels(args.direction, args.pixels);
+    } else if (args.direction) {
+      const { innerHeight } = await this.client.getPageInfo();
+      await this.client.scrollByPixels(args.direction, innerHeight);
+    } else {
+      return 'Missing required arguments: page, or direction';
+    }
+    const { innerHeight, scrollHeight, scrollOffset, pages } = await this.client.getPageInfo();
+    return { innerHeight, scrollHeight, scrollOffset, pages };
+  }
+
+  /**
    * Handles screenshot tool requests
    *
    * @private
-   * @param {ScreenshotArgs} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleScreenshot(args: ScreenshotArgs): Promise<any> {
-    const base64Png = await this.client.takeScreenshot(args.page);
+  private async handleScreenshot(): Promise<any> {
+    const base64Png = await this.client.takeScreenshot();
     const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
     return {
       content: [
@@ -304,10 +326,9 @@ export class Mcp {
     await this.client.search(args.text);
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
-    const readyState = await this.client.executeScript('document.readyState');
-    const { pages } = await this.client.getPageInfo();
+    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
     const tabs = (await this.client.listTabs()).length;
-    return { title, url, readyState, pages, tabs };
+    return { title, url, pages, innerHeight, scrollHeight, tabs };
   }
 
   /**
@@ -388,6 +409,7 @@ export class Mcp {
       { tool: this.tool.open(), handler: this.handleOpen.bind(this) },
       { tool: this.tool.read(), handler: this.handleRead.bind(this) },
       { tool: this.tool.screenshot(), handler: this.handleScreenshot.bind(this) },
+      { tool: this.tool.scroll(), handler: this.handleScroll.bind(this) },
       { tool: this.tool.search(), handler: this.handleSearch.bind(this) },
       { tool: this.tool.type(), handler: this.handleType.bind(this) },
       { tool: this.tool.window(), handler: this.handleWindow.bind(this) }

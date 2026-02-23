@@ -122,6 +122,7 @@ export class McpTool {
       this.open(),
       this.read(),
       this.screenshot(),
+      this.scroll(),
       this.search(),
       this.type(),
       this.window()
@@ -145,7 +146,6 @@ export class McpTool {
         type: 'object',
         properties: {
           direction: { type: 'string', enum: ['back', 'forward'], description: 'Navigate back or forward in browser history' },
-          page: { type: 'number', description: 'Scroll to a specific viewport-sized page number' },
           selector: { type: 'string', description: 'CSS selector to wait for after page load' },
           steps: { type: 'number', description: 'Number of steps for back/forward navigation', default: 1 },
           url: { type: 'string', description: 'URL to navigate to' }
@@ -154,8 +154,7 @@ export class McpTool {
       _meta: {
         usage: [
           'Read the page after navigation to understand available content',
-          'Use `direction` parameter for history navigation instead of re-entering URLs',
-          'Use `page` parameter to scroll to specific viewport sections'
+          'Use `direction` parameter for history navigation instead of re-entering URLs'
         ]
       }
     };
@@ -215,7 +214,7 @@ export class McpTool {
   /**
    * Creates MCP tool for capturing page screenshots
    *
-   * Captures a screenshot of the specified viewport page,
+   * Captures a screenshot of the current browser viewport,
    * returning it as a base64 PNG image.
    *
    * @returns {Tool} MCP tool definition for page screenshot capture
@@ -223,18 +222,48 @@ export class McpTool {
   screenshot(): Tool {
     return {
       name: 'screenshot',
-      description: 'Capture the screenshot for a specific viewport-sized page',
+      description: 'Capture a screenshot of the current browser viewport',
       inputSchema: {
         type: 'object',
-        properties: {
-          page: { type: 'number', description: 'Page number to capture', default: 1 }
-        }
+        properties: {}
       },
       _meta: {
         usage: [
           'Prefer `read` tool over `screenshot` for identifying page elements and content',
-          'Use `page` parameter to scroll to and capture a specific viewport-sized page',
+          'Use `scroll` tool to position the viewport before capturing',
           'Use `screenshot` tool for visual verification of images and layouts'
+        ]
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for scrolling the page
+   *
+   * Scrolls the viewport by direction with pixel amount,
+   * or jumps to a specific viewport-sized page number.
+   *
+   * @returns {Tool} MCP tool definition for page scrolling
+   */
+  scroll(): Tool {
+    return {
+      name: 'scroll',
+      description: 'Scroll to specific viewport page or by direction with pixel amount',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          direction: { type: 'string', enum: ['up', 'down'], description: 'Scroll direction' },
+          page: { type: 'number', description: 'Scroll to a specific viewport-sized page number' },
+          pixels: { type: 'number', description: 'Number of pixels to scroll' }
+        }
+      },
+      _meta: {
+        usage: [
+          'Provide either `direction` or `page` parameter, not both',
+          'Use `direction` alone to scroll one viewport page up or down',
+          'Use `direction` with `pixels` parameter for fine-grained scrolling within browser window',
+          'Use `page` parameter to jump to a specific viewport-sized page number',
+          'Use `scroll` before `screenshot` tool to position the viewport'
         ]
       }
     };

@@ -4,6 +4,26 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-02-23
+
+### Added
+
+- `scroll` tool with three modes: viewport page jump, directional page scroll, and fine-grained pixel scrolling
+- `scrollOffset` tracking in scroll responses for precise viewport position awareness
+- Viewport dimensions in `navigate`, `scroll`, and `search` tool responses
+
+### Changed
+
+- Extracted viewport scrolling from `navigate` tool into dedicated `scroll` tool
+- Extracted viewport scrolling from `screenshot` tool, now captures current viewport only
+- Response property ordering from alphabetical to reading priority across tool handlers
+
+### Removed
+
+- `page` parameter from `navigate` tool
+- `page` parameter from `screenshot` tool
+- `readyState` from `navigate` and `search` tool responses, redundant after page load completion
+
 ## [1.0.5] - 2026-02-22
 
 ### Added
