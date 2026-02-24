@@ -42,6 +42,11 @@ interface ReadArgs {
   selector?: string;
 }
 
+interface RefreshArgs {
+  hard?: boolean;
+  selector?: string;
+}
+
 interface ScrollArgs {
   direction?: 'up' | 'down';
   page?: number;
@@ -247,6 +252,27 @@ export class Mcp {
   }
 
   /**
+   * Handles refresh tool requests
+   *
+   * @private
+   * @param {RefreshArgs} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleRefresh(args: RefreshArgs): Promise<any> {
+    let selectorFound: boolean | undefined;
+    selectorFound = await this.client.refresh(args.hard, args.selector);
+    const title = await this.client.getTitle();
+    const url = await this.client.getUrl();
+    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+    const tabs = (await this.client.listTabs()).length;
+    const response: Record<string, any> = { title, url, pages, innerHeight, scrollHeight, tabs };
+    if (args.selector) {
+      response.selectorFound = selectorFound;
+    }
+    return response;
+  }
+
+  /**
    * Handles tool execution requests from MCP clients
    *
    * @private
@@ -408,6 +434,7 @@ export class Mcp {
       { tool: this.tool.navigate(), handler: this.handleNavigate.bind(this) },
       { tool: this.tool.open(), handler: this.handleOpen.bind(this) },
       { tool: this.tool.read(), handler: this.handleRead.bind(this) },
+      { tool: this.tool.refresh(), handler: this.handleRefresh.bind(this) },
       { tool: this.tool.screenshot(), handler: this.handleScreenshot.bind(this) },
       { tool: this.tool.scroll(), handler: this.handleScroll.bind(this) },
       { tool: this.tool.search(), handler: this.handleSearch.bind(this) },

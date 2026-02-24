@@ -443,6 +443,25 @@ export class Client {
   }
 
   /**
+   * Refreshes the current page, optionally bypassing the browser cache
+   *
+   * @param {boolean} [hard=false] - Whether to bypass browser cache
+   * @param {string} [selector] - CSS selector to wait for after reload
+   * @returns {Promise<boolean>} Whether the selector was found (true if no selector specified)
+   */
+  async refresh(hard: boolean = false, selector?: string): Promise<boolean> {
+    this.assertActive();
+    await this.executeScript(`location.reload(${hard ? 'true' : ''})`);
+    await this.injectErrorCaptureEarly();
+    await this.waitForPageLoad();
+    await this.injectErrorCapture();
+    if (selector) {
+      return await this.waitForSelector(selector);
+    }
+    return true;
+  }
+
+  /**
    * Searches the web using the user's default search engine
    *
    * @param {string} query - Search query text
