@@ -1,6 +1,6 @@
 {
   "name": "@axivo/mcp-safari",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "type": "module",
   "description": "MCP server for Safari web browser integration",
   "keywords": [
