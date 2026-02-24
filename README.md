@@ -60,6 +60,7 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 - "_Read the page content to understand what's on the page_"
 - "_Click the 'Sign In' button_"
 - "_Type my email into the login form and submit_"
+- "_Refresh the page to see the latest changes_"
 - "_Go back to the previous page_"
 - "_Navigate forward two steps in browser history_"
 - "_Scroll down 500 pixels_"
@@ -115,11 +116,18 @@ Here are practical examples of how to use the Safari MCP server with natural lan
      - `selector` (string): CSS selector to scope text extraction
    - Returns: Page title, URL, text content, viewport pages, and any captured console errors/warnings
 
-7. `screenshot`
+7. `refresh`
+   - Refresh the current browser page
+   - Optional inputs:
+     - `hard` (boolean, default: false): Bypass browser cache with hard refresh
+     - `selector` (string): CSS selector to wait for after reload
+   - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
+
+8. `screenshot`
    - Capture a screenshot of the current browser viewport
    - Returns: Base64-encoded PNG screenshot with viewport dimensions
 
-8. `scroll`
+9. `scroll`
    - Scroll to specific viewport page or by direction with pixel amount
    - Optional inputs:
      - `direction` (string: `up` or `down`): Scroll direction (scrolls one viewport page when used alone)
@@ -127,13 +135,13 @@ Here are practical examples of how to use the Safari MCP server with natural lan
      - `pixels` (number): Number of pixels to scroll (used with direction for fine-grained control)
    - Returns: Viewport dimensions, scroll offset, and viewport pages
 
-9. `search`
-   - Search the web using browser's default search engine
-   - Required inputs:
-     - `text` (string): Search query
-   - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
+10. `search`
+    - Search the web using browser's default search engine
+    - Required inputs:
+      - `text` (string): Search query
+    - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
 
-10. `type`
+11. `type`
     - Type text into a page input field
     - Required inputs:
       - `text` (string): Text to type
@@ -143,7 +151,7 @@ Here are practical examples of how to use the Safari MCP server with natural lan
       - `submit` (boolean, default: false): Submit form by pressing Enter after typing
     - Returns: Description of the action taken
 
-11. `window`
+12. `window`
     - Manage browser window tabs
     - Required inputs:
       - `action` (string: `close`, `list`, `open`, `switch`): Tab action to perform

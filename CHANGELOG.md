@@ -4,6 +4,13 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-02-24
+
+### Added
+
+- `refresh` tool with normal and hard reload modes, optional CSS selector wait after reload
+- `refresh` tool prompt example for page reload
+
 ## [1.0.6] - 2026-02-23
 
 ### Added

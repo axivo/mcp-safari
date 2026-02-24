@@ -121,6 +121,7 @@ export class McpTool {
       this.navigate(),
       this.open(),
       this.read(),
+      this.refresh(),
       this.screenshot(),
       this.scroll(),
       this.search(),
@@ -206,6 +207,33 @@ export class McpTool {
         usage: [
           'Read the page after navigation to understand available content',
           'Use `selector` parameter to scope extraction to specific page sections'
+        ]
+      }
+    };
+  }
+
+  /**
+   * Creates MCP tool for refreshing the current browser page
+   *
+   * Reloads the current page, optionally bypassing the browser cache.
+   * Waits for the page to finish loading before returning.
+   *
+   * @returns {Tool} MCP tool definition for page refresh
+   */
+  refresh(): Tool {
+    return {
+      name: 'refresh',
+      description: 'Refresh the current browser page',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          hard: { type: 'boolean', description: 'Bypass browser cache with hard refresh', default: false },
+          selector: { type: 'string', description: 'CSS selector to wait for after reload' }
+        }
+      },
+      _meta: {
+        usage: [
+          'Use `hard` parameter when CSS or asset changes are not reflected after a normal refresh'
         ]
       }
     };
