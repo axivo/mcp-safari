@@ -4,6 +4,55 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-04
+
+### Added
+
+- New `hover` tool for revealing hover-triggered UI
+- New `inspect` tool returning element metadata for a CSS selector
+- New `select` tool for choosing options in `<select>` elements
+- New `status` tool returning current Safari tabs and the full tool surface with usage guidance
+- New `wait` tool for polling on selector or page text conditions
+- New `mode` parameter on `read` tool with `text` and `links` modes
+- New `index` parameter on `read` and `inspect` tools for non-focused tab inspection
+- Title-stable page-load detection via `document.title` polling after `readyState=complete`
+- `outputSchema` and `structuredContent` on tools returning structured payloads
+- `ToolAnnotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) on every tool
+- Numeric input coercion via `z.coerce.number()` on tool input fields
+
+### Changed
+
+- Act operations target a captured working tab, observe operations the user's focused tab
+- Tool `open` creates a working tab as the target for subsequent act operations
+- Tool `close` closes only the working tab, leaving other tabs and windows intact
+- Tool `navigate` self-bootstraps a working tab and window if none exists
+- Tool `window` action `switch` is now focus-only and does not reassign the working tab
+- Tool registration migrated from `setRequestHandler` to `McpServer.registerTool`
+- Tool input schemas migrated from JSON Schema literals to Zod raw shapes
+- AppleScript primitives now take explicit `windowId` and tab `index` parameters
+- Library `lib/automation.js` and `lib/browser.js` ported to TypeScript with DOM type narrowing
+- Method `Client.version` renamed to `Client.getVersion` for getter convention
+- Console capture overrides use rest parameters instead of `arguments`
+- Class methods reordered: constructor, then private methods alphabetical, then public methods alphabetical
+- Dependency `@modelcontextprotocol/sdk` bumped to `^1.29.0`
+- Dependency `zod` bumped to `^4.4.0`
+- TypeScript `module` and `moduleResolution` set to `NodeNext`
+
+### Fixed
+
+- Front-window hijack when the captured working tab was closed
+- Cold-start tab proliferation creating two tabs instead of one in a fresh window
+- SPA title race returning the URL string instead of the page title
+
+### Removed
+
+- Embedded tool list from `open` tool response, replaced by standard `tools/list`
+- Interface declarations `XArgs` in `mcp.ts`, replaced by Zod inference
+- Manual default-value injection, replaced by Zod `.default()`
+- Manual required-field validation, replaced by SDK schema validation
+- Library declaration shims `lib/automation.d.ts` and `lib/browser.d.ts`
+- Compiler option `allowJs` from `tsconfig.json`
+
 ## [1.0.7] - 2026-02-24
 
 ### Added
