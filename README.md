@@ -10,12 +10,16 @@ A MCP (Model Context Protocol) server for visual web access through Safari.
 
 ### Features
 
-- **Visual Web Access**: Capture viewport screenshots for visual page inspection
-- **Full Authentication State**: Controls the user's actual Safari session with cookies and login state preserved
-- **Viewport Scrolling**: Scroll by pixel amount or jump to viewport-sized pages for precise positioning
-- **Interaction Tools**: Click elements by visible text and type into input fields with framework reactivity support
-- **Browser History**: Navigate back and forward through browser history
-- **Console Error Capture**: Two-phase injection catches console errors and warnings during and after page load
+- **Visual Web Access**: Viewport screenshots for visual inspection
+- **Full Authentication State**: Operates on the user's actual Safari session with cookies preserved
+- **Tab-Aware Targeting**: Act operations target a captured working tab, observe operations follow the user's focus
+- **Viewport Scrolling**: Pixel amount or viewport-page index
+- **Element Inspection**: Tag, visibility, attributes, bounding rect for any CSS selector
+- **Interaction Tools**: Click, type, hover, select option
+- **Wait Conditions**: Selector to appear, disappear, or page text to render
+- **Link Extraction**: Anchor links as `{ text, href }` pairs
+- **Browser History**: Back and forward navigation
+- **Console Error Capture**: Two-phase injection during and after page load
 
 ### Prerequisites
 
@@ -43,19 +47,18 @@ Add to `mcp.json` servers configuration:
 
 #### Environment Variables
 
-All variables are optional — defaults apply if not set:
+All variables are optional:
 
-- `SAFARI_PAGE_TIMEOUT` — Page load and selector wait timeout, in milliseconds (default: `10000`)
-- `SAFARI_WINDOW_BOUNDS` — Browser window margin offset from top-left corner, in pixels (default: `20`)
-- `SAFARI_WINDOW_HEIGHT` — Browser window height, in pixels (default: `1024`)
-- `SAFARI_WINDOW_WIDTH` — Browser window width, in pixels (default: `1280`)
+- `SAFARI_PAGE_TIMEOUT` - Page load and selector wait timeout, in milliseconds (default: `10000`)
+- `SAFARI_WINDOW_BOUNDS` - Browser window margin offset from top-left corner, in pixels (default: `20`)
+- `SAFARI_WINDOW_HEIGHT` - Browser window height, in pixels (default: `1024`)
+- `SAFARI_WINDOW_WIDTH` - Browser window width, in pixels (default: `1280`)
 
 ### Prompt Examples
 
-Here are practical examples of how to use the Safari MCP server with natural language prompts:
-
-- "_Open Safari and review the tools usage, then go to `example.com`_"
-- "_Open Safari and review the tools usage, then search for `example query`_"
+- "_Open Safari and use `status` tool for guidelines_"
+- "_Navigate to `example.com`_"
+- "_Search for `example query`_"
 - "_Take a screenshot of the current page_"
 - "_Read the page content to understand what's on the page_"
 - "_Click the 'Sign In' button_"
@@ -70,92 +73,145 @@ Here are practical examples of how to use the Safari MCP server with natural lan
 - "_Open a new browser tab and go to `example.com`_"
 - "_Switch to the first browser tab_"
 - "_Close the second browser tab_"
+- "_Inspect the submit button before clicking it_"
+- "_Hover over the Products menu_"
+- "_Choose 'Canada' in the country dropdown_"
+- "_Wait for the loading spinner to disappear_"
+- "_Read all links on this page_"
 
 > [!NOTE]
-> The "review the tools usage" instruction helps Claude pause and process the `_meta.usage` guidelines before interacting with the browser.
+> The "use `status` tool" instruction helps Claude pause and process the `_meta.usage` guidelines before interacting with the browser.
 
 ### MCP Tools
 
+Call `status` first at session start to get the runtime state and full tool surface:
+
+- **Act tools** target a captured working tab
+- **Observe tools** target the front window's current tab
+
 1. `click`
-   - Click an element on the browser window
+   - Click an element on the working tab
+   - Type: `act` tool
    - Optional inputs:
-     - `key` (string): Key to press (e.g., Escape, ArrowRight, ArrowLeft, Enter, Tab)
-     - `selector` (string): CSS selector to click when no text provided or to scope the text search
-     - `text` (string): Text to match - visible text, image alt text, or aria-label
+     - `key` (string): Key to press (e.g., Escape, ArrowRight, Enter, Tab)
+     - `selector` (string): CSS selector for the target element
+     - `text` (string): Visible text or aria-label to match
      - `wait` (string): CSS selector to wait for after click
-     - `x` (number): X coordinate (pixels from left of viewport) to click at
-     - `y` (number): Y coordinate (pixels from top of viewport) to click at
-   - Returns: Click result with page title, URL, viewport pages, tabs, and detected changes
+     - `x` (number): X coordinate in pixels
+     - `y` (number): Y coordinate in pixels
+   - Returns: Result with change detection
 
 2. `close`
-   - Close the browser window
-   - Returns: Session closure confirmation
+   - Close the working tab
+   - Type: `act` tool
 
 3. `execute`
-   - Execute JavaScript in the browser context
+   - Execute JavaScript in the working tab
+   - Type: `act` tool
    - Required inputs:
-     - `script` (string): JavaScript code to execute
-   - Returns: Script execution result
+     - `script` (string): JavaScript code
 
-4. `navigate`
-   - Navigate to a URL or through browser history (back/forward)
+4. `hover`
+   - Dispatch hover events to reveal hover-triggered UI
+   - Type: `act` tool
+   - Optional inputs (one is required):
+     - `selector` (string): CSS selector for the target element
+     - `text` (string): Visible text to match
+
+5. `inspect`
+   - Return element metadata for a CSS selector
+   - Type: `observe` tool
+   - Required inputs:
+     - `selector` (string): CSS selector for the target element
    - Optional inputs:
-     - `direction` (string: `back` or `forward`): Navigate back or forward in browser history
-     - `selector` (string): CSS selector to wait for after page load
-     - `steps` (number, default: 1): Number of steps for back/forward navigation
+     - `index` (number): Tab index in the front window
+   - Returns: `{ found, tag, text, visible, disabled, attributes, rect }`
+
+6. `navigate`
+   - Navigate the working tab to a URL or through history
+   - Type: `act` tool
+   - Optional inputs (`url` or `direction` required):
+     - `direction` (string: `back` or `forward`)
+     - `selector` (string): CSS selector to wait for after load
+     - `steps` (number, default: 1): Steps for history navigation
      - `url` (string): URL to navigate to
-   - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
 
-5. `open`
-   - Open a browser window and read `_meta.usage` tools guidance
-   - Returns: Tab count and complete tool definitions with usage guidance
+7. `open`
+   - Open a blank tab as the working target
+   - Type: `act` tool
 
-6. `read`
-   - Get the page title, URL, full text content, and count for viewport-sized screenshots
+8. `read`
+   - Get page title, URL, and text or links from a tab
+   - Type: `observe` tool
    - Optional inputs:
-     - `selector` (string): CSS selector to scope text extraction
-   - Returns: Page title, URL, text content, viewport pages, and any captured console errors/warnings
+     - `index` (number): Tab index in the front window
+     - `mode` (string: `text` or `links`, default: `text`)
+     - `selector` (string): CSS selector to scope extraction
 
-7. `refresh`
-   - Refresh the current browser page
+9. `refresh`
+   - Refresh the working tab
+   - Type: `act` tool
    - Optional inputs:
-     - `hard` (boolean, default: false): Bypass browser cache with hard refresh
+     - `hard` (boolean, default: false): Bypass cache
      - `selector` (string): CSS selector to wait for after reload
-   - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
 
-8. `screenshot`
-   - Capture a screenshot of the current browser viewport
-   - Returns: Base64-encoded PNG screenshot with viewport dimensions
+10. `screenshot`
+    - Capture viewport of the front tab as base64 PNG
+    - Type: `observe` tool
 
-9. `scroll`
-   - Scroll to specific viewport page or by direction with pixel amount
-   - Optional inputs:
-     - `direction` (string: `up` or `down`): Scroll direction (scrolls one viewport page when used alone)
-     - `page` (number): Scroll to a specific viewport-sized page number
-     - `pixels` (number): Number of pixels to scroll (used with direction for fine-grained control)
-   - Returns: Viewport dimensions, scroll offset, and viewport pages
+11. `scroll`
+    - Scroll by direction or to a viewport-page index
+    - Type: `observe` tool
+    - Optional inputs:
+      - `direction` (string: `up` or `down`)
+      - `page` (number): Viewport-page index to scroll to
+      - `pixels` (number): Pixels to scroll, paired with `direction`
 
-10. `search`
-    - Search the web using browser's default search engine
+12. `search`
+    - Search using the browser's default engine
+    - Type: `act` tool
     - Required inputs:
       - `text` (string): Search query
-    - Returns: Page title, URL, viewport pages, viewport dimensions, and tab count
 
-11. `type`
-    - Type text into a page input field
+13. `select`
+    - Choose an option in a `<select>` element
+    - Type: `act` tool
+    - Required inputs:
+      - `selector` (string): CSS selector for the `<select>`
+    - Optional inputs (one is required):
+      - `text` (string): Option visible text
+      - `value` (string): Option value attribute
+
+14. `status`
+    - Return current Safari tabs and full tool surface
+    - Type: `observe` tool
+    - Returns: `{ tabs, tools }`
+
+15. `type`
+    - Type text into an input field
+    - Type: `act` tool
     - Required inputs:
       - `text` (string): Text to type
     - Optional inputs:
-      - `append` (boolean, default: false): Append to existing value instead of replacing
-      - `selector` (string): CSS selector for the target input
-      - `submit` (boolean, default: false): Submit form by pressing Enter after typing
-    - Returns: Description of the action taken
+      - `append` (boolean, default: false): Append instead of replace
+      - `selector` (string): CSS selector for the input
+      - `submit` (boolean, default: false): Press Enter after typing
 
-12. `window`
+16. `wait`
+    - Wait for selector or page text condition
+    - Type: `observe` tool
+    - Optional inputs (exactly one of the first three required):
+      - `selector` (string): CSS selector to wait for
+      - `selectorGone` (string): CSS selector to wait absent
+      - `text` (string): Page text to wait for
+      - `timeoutMs` (number): Timeout in milliseconds
+    - Returns: `{ matched, elapsedMs }`
+
+17. `window`
     - Manage browser window tabs
+    - Type: `observe` tool
     - Required inputs:
-      - `action` (string: `close`, `list`, `open`, `switch`): Tab action to perform
+      - `action` (string: `close`, `list`, `open`, `switch`)
     - Optional inputs:
-      - `index` (number): Tab index for close and switch actions
-      - `url` (string): URL to open in a new tab (open action only)
-    - Returns: Array of tabs with active status, index, title, and URL
+      - `index` (number): Tab index for `close` and `switch`
+      - `url` (string): URL for `open`

@@ -8,69 +8,9 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequest,
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { Client } from './client.js';
 import { McpTool } from './tool.js';
-
-interface ClickArgs {
-  key?: string;
-  selector?: string;
-  text?: string;
-  wait?: string;
-  x?: number;
-  y?: number;
-}
-
-interface ExecuteArgs {
-  script: string;
-}
-
-interface NavigateArgs {
-  direction?: 'back' | 'forward';
-  selector?: string;
-  steps?: number;
-  url?: string;
-}
-
-interface ReadArgs {
-  selector?: string;
-}
-
-interface RefreshArgs {
-  hard?: boolean;
-  selector?: string;
-}
-
-interface ScrollArgs {
-  direction?: 'up' | 'down';
-  page?: number;
-  pixels?: number;
-}
-
-interface SearchArgs {
-  text: string;
-}
-
-interface TypeArgs {
-  text: string;
-  append?: boolean;
-  selector?: string;
-  submit?: boolean;
-}
-
-interface WindowArgs {
-  action: 'close' | 'list' | 'open' | 'switch';
-  index?: number;
-  url?: string;
-}
-
-type ToolHandler = (args: any) => Promise<any>;
 
 /**
  * Safari MCP Server implementation bridging Safari browser with Model Context Protocol
@@ -84,36 +24,85 @@ export class Mcp {
   private client: Client;
   private server: McpServer;
   private tool: McpTool;
-  private toolHandlers: Map<string, ToolHandler>;
 
   /**
    * Creates a new Mcp instance with tool setup
    *
-   * Initializes AppleScript client, MCP server, and tool registry.
-   * Sets up handler mappings and prepares for transport connection.
+   * Initializes AppleScript client, MCP server, and registers every
+   * tool with the underlying McpServer registry.
    */
   constructor() {
     this.client = new Client();
     this.server = new McpServer(
-      { name: 'safari', version: this.client.version() },
+      { name: 'safari', version: this.client.getVersion() },
       { capabilities: { tools: {} } }
     );
     this.tool = new McpTool();
-    this.toolHandlers = new Map<string, ToolHandler>();
-    this.setupToolHandlers();
-    this.setupHandlers();
+    this.registerAll();
+  }
+
+  /**
+   * Returns all tool definitions in a wire-friendly shape for the status tool
+   *
+   * Iterates every registered tool, converts each Zod input/output schema to
+   * JSON Schema for portability, and lifts `_meta.usage` to a top-level `usage`
+   * field for ergonomic consumption.
+   *
+   * @private
+   * @returns {object[]} Array of tool definitions
+   */
+  private getToolDefinitions(): Record<string, unknown>[] {
+    const entries: { name: string; config: Record<string, unknown> }[] = [
+      { name: 'click', config: this.tool.click() },
+      { name: 'close', config: this.tool.close() },
+      { name: 'execute', config: this.tool.execute() },
+      { name: 'hover', config: this.tool.hover() },
+      { name: 'inspect', config: this.tool.inspect() },
+      { name: 'navigate', config: this.tool.navigate() },
+      { name: 'open', config: this.tool.open() },
+      { name: 'read', config: this.tool.read() },
+      { name: 'refresh', config: this.tool.refresh() },
+      { name: 'screenshot', config: this.tool.screenshot() },
+      { name: 'scroll', config: this.tool.scroll() },
+      { name: 'search', config: this.tool.search() },
+      { name: 'select', config: this.tool.select() },
+      { name: 'status', config: this.tool.status() },
+      { name: 'type', config: this.tool.type() },
+      { name: 'wait', config: this.tool.wait() },
+      { name: 'window', config: this.tool.window() }
+    ];
+    return entries.map(({ name, config }) => {
+      const definition: Record<string, unknown> = {
+        name,
+        description: config.description ?? ''
+      };
+      if (config.inputSchema && Object.keys(config.inputSchema as Record<string, unknown>).length > 0) {
+        definition.inputSchema = z.toJSONSchema(z.object(config.inputSchema as z.ZodRawShape));
+      }
+      if (config.outputSchema && Object.keys(config.outputSchema as Record<string, unknown>).length > 0) {
+        definition.outputSchema = z.toJSONSchema(z.object(config.outputSchema as z.ZodRawShape));
+      }
+      if (config.annotations) {
+        definition.annotations = config.annotations;
+      }
+      const meta = config._meta as { usage?: string[] } | undefined;
+      if (meta?.usage) {
+        definition.usage = meta.usage;
+      }
+      return definition;
+    });
   }
 
   /**
    * Handles click tool requests
    *
    * @private
-   * @param {ClickArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleClick(args: ClickArgs): Promise<any> {
+  private async handleClick(args: { key?: string; selector?: string; text?: string; wait?: string; x?: number; y?: number }) {
     if (!args.text && !args.selector && !args.key && (args.x === undefined || args.y === undefined)) {
-      return 'Missing required arguments: text, selector, key, or x/y coordinates';
+      return this.client.response('Missing required arguments: text, selector, key, or x/y coordinates');
     }
     const openTitle = await this.client.getTitle();
     const openUrl = await this.client.getUrl();
@@ -130,7 +119,7 @@ export class Mcp {
     const url = await this.client.getUrl();
     const { pages } = await this.client.getPageInfo();
     const tabs = await this.client.listTabs();
-    const response: Record<string, any> = { result, title, url, pages, tabs: tabs.length };
+    const response: Record<string, unknown> = { result, title, url, pages, tabs: tabs.length };
     if (args.wait) {
       response.selectorFound = selectorFound;
     }
@@ -151,160 +140,186 @@ export class Mcp {
     if (changes.length) {
       response.changes = changes;
     }
-    return response;
+    return this.client.response(response, true);
   }
 
   /**
    * Handles close tool requests
    *
+   * Closes the working tab if one exists. The user's other tabs and
+   * windows are unaffected.
+   *
    * @private
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleClose(): Promise<any> {
-    await this.client.closeSession();
-    return { content: [{ type: 'text', text: JSON.stringify({ tabs: 0 }) }] };
+  private async handleClose() {
+    await this.client.closeWorkingTab();
+    return this.structured({ closed: true });
   }
 
   /**
    * Handles execute tool requests
    *
    * @private
-   * @param {ExecuteArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleExecute(args: ExecuteArgs): Promise<any> {
-    const error = this.validate(args, ['script']);
-    if (error) {
-      return error;
+  private async handleExecute(args: { script: string }) {
+    const target = await this.client.getCurrentTab();
+    const result = await this.client.executeScript(target, args.script);
+    return this.client.response(result);
+  }
+
+  /**
+   * Handles hover tool requests
+   *
+   * @private
+   * @param {object} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleHover(args: { selector?: string; text?: string }) {
+    if (!args.selector && !args.text) {
+      return this.client.response('Missing required argument: provide either `selector` or `text`');
     }
-    const result = await this.client.executeScript(args.script);
-    return result;
+    const result = await this.client.hover(args.selector, args.text);
+    return this.client.response(result);
+  }
+
+  /**
+   * Handles inspect tool requests
+   *
+   * @private
+   * @param {object} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleInspect(args: { selector: string; index?: number }) {
+    const result = await this.client.inspect(args.selector, args.index);
+    return this.structured(result);
   }
 
   /**
    * Handles navigate tool requests
    *
    * @private
-   * @param {NavigateArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleNavigate(args: NavigateArgs): Promise<any> {
+  private async handleNavigate(args: { direction?: 'back' | 'forward'; selector?: string; steps: number; url?: string }) {
     let selectorFound: boolean | undefined;
     if (args.url) {
       selectorFound = await this.client.navigateTo(args.url, args.selector);
     } else if (args.direction) {
-      const steps = args.direction === 'back' ? -(args.steps!) : args.steps!;
+      const steps = args.direction === 'back' ? -args.steps : args.steps;
       selectorFound = await this.client.goHistory(steps, args.selector);
     } else {
-      return 'Missing required arguments: url or direction';
+      return this.client.response('Missing required arguments: url or direction');
     }
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
-    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+    const { innerHeight, scrollHeight, scrollOffset, pages } = await this.client.getPageInfo();
     const tabs = (await this.client.listTabs()).length;
-    const response: Record<string, any> = { title, url, pages, innerHeight, scrollHeight, tabs };
+    const output: Record<string, unknown> = { title, url, pages, innerHeight, scrollHeight, scrollOffset, tabs };
     if (args.selector) {
-      response.selectorFound = selectorFound;
+      output.selectorFound = selectorFound;
     }
-    return response;
+    return this.structured(output);
   }
 
   /**
    * Handles open tool requests
    *
+   * Opens a fresh blank tab. Activates Safari and creates a window first
+   * if none is open. The new tab becomes the working tab - subsequent
+   * act operations (`navigate`, `click`, `type`, ...) will target it. Tool
+   * surface guidance is available via the standard `tools/list` MCP
+   * request.
+   *
    * @private
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleOpen(): Promise<any> {
-    await this.client.openSession();
-    const tools = this.setServerTools().map(({ tool }) => tool);
-    return {
-      tabs: 1,
-      tools
-    };
+  private async handleOpen() {
+    await this.client.openTab();
+    return this.structured({ opened: true });
   }
 
   /**
    * Handles read tool requests
    *
    * @private
-   * @param {ReadArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleRead(args: ReadArgs): Promise<any> {
-    const title = await this.client.getTitle();
-    const url = await this.client.getUrl();
-    const escaped = args.selector ? args.selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
-    const textScript = args.selector
-      ? `(document.querySelector('${escaped}') || {}).innerText || ''`
-      : 'document.body.innerText';
-    const text = await this.client.executeScript(textScript);
-    const { pages } = await this.client.getPageInfo();
-    const response: Record<string, any> = { title, url, text, pages };
-    const { errors, warnings } = await this.client.getConsoleErrors();
+  private async handleRead(args: { selector?: string; index?: number; mode: 'text' | 'links' }) {
+    const title = await this.client.getTitle(args.index);
+    const url = await this.client.getUrl(args.index);
+    const { pages } = await this.client.getPageInfo(args.index);
+    const output: Record<string, unknown> = { title, url, pages };
+    if (args.mode === 'links') {
+      output.links = await this.client.readLinks(args.selector, args.index);
+    } else {
+      const escaped = args.selector ? args.selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+      const textScript = args.selector
+        ? `(document.querySelector('${escaped}') || {}).innerText || ''`
+        : 'document.body.innerText';
+      output.text = await this.client.readScript(textScript, args.index);
+    }
+    const { errors, warnings } = await this.client.getConsoleErrors(args.index);
     if (errors.length) {
-      response.errors = errors;
+      output.errors = errors;
     }
     if (warnings.length) {
-      response.warnings = warnings;
+      output.warnings = warnings;
     }
-    return response;
+    return this.structured(output);
   }
 
   /**
    * Handles refresh tool requests
    *
    * @private
-   * @param {RefreshArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleRefresh(args: RefreshArgs): Promise<any> {
-    let selectorFound: boolean | undefined;
-    selectorFound = await this.client.refresh(args.hard, args.selector);
+  private async handleRefresh(args: { hard: boolean; selector?: string }) {
+    const selectorFound = await this.client.refresh(args.hard, args.selector);
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
-    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+    const { innerHeight, scrollHeight, scrollOffset, pages } = await this.client.getPageInfo();
     const tabs = (await this.client.listTabs()).length;
-    const response: Record<string, any> = { title, url, pages, innerHeight, scrollHeight, tabs };
+    const output: Record<string, unknown> = { title, url, pages, innerHeight, scrollHeight, scrollOffset, tabs };
     if (args.selector) {
-      response.selectorFound = selectorFound;
+      output.selectorFound = selectorFound;
     }
-    return response;
+    return this.structured(output);
   }
 
   /**
-   * Handles tool execution requests from MCP clients
+   * Handles screenshot tool requests
    *
    * @private
-   * @param {CallToolRequest} request - The tool execution request
-   * @returns {Promise<Object>} Response containing tool execution results
+   * @returns {Promise<any>} Tool execution response
    */
-  private async handleRequest(request: CallToolRequest): Promise<any> {
-    const handler = this.toolHandlers.get(request.params.name);
-    if (!handler) {
-      return this.client.response(`Unknown tool: ${request.params.name}`);
-    }
-    try {
-      const result = await handler(request.params.arguments || {});
-      if (result?.content) {
-        return result;
-      }
-      return this.client.response(result, typeof result === 'string' ? false : true);
-    } catch (error) {
-      return this.client.response(`Error: ${(error as Error).message}`);
-    }
+  private async handleScreenshot() {
+    const base64Png = await this.client.takeScreenshot();
+    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+    return {
+      content: [
+        { type: 'image' as const, data: base64Png, mimeType: 'image/png' },
+        { type: 'text' as const, text: JSON.stringify({ innerHeight, scrollHeight, pages }) }
+      ]
+    };
   }
 
   /**
    * Handles scroll tool requests
    *
    * @private
-   * @param {ScrollArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleScroll(args: ScrollArgs): Promise<any> {
+  private async handleScroll(args: { direction?: 'up' | 'down'; page?: number; pixels?: number }) {
     if (args.page !== undefined && (args.direction || args.pixels !== undefined)) {
-      return 'Invalid arguments: provide either page or direction with pixels, not both';
+      return this.client.response('Invalid arguments: provide either page or direction with pixels, not both');
     }
     if (args.page !== undefined) {
       await this.client.scrollToPage(args.page);
@@ -314,199 +329,164 @@ export class Mcp {
       const { innerHeight } = await this.client.getPageInfo();
       await this.client.scrollByPixels(args.direction, innerHeight);
     } else {
-      return 'Missing required arguments: page, or direction';
+      return this.client.response('Missing required arguments: page, or direction');
     }
     const { innerHeight, scrollHeight, scrollOffset, pages } = await this.client.getPageInfo();
-    return { innerHeight, scrollHeight, scrollOffset, pages };
-  }
-
-  /**
-   * Handles screenshot tool requests
-   *
-   * @private
-   * @returns {Promise<any>} Tool execution response
-   */
-  private async handleScreenshot(): Promise<any> {
-    const base64Png = await this.client.takeScreenshot();
-    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
-    return {
-      content: [
-        { type: 'image', data: base64Png, mimeType: 'image/png' },
-        { type: 'text', text: JSON.stringify({ innerHeight, scrollHeight, pages }) }
-      ]
-    };
+    return this.structured({ innerHeight, scrollHeight, scrollOffset, pages });
   }
 
   /**
    * Handles search tool requests
    *
    * @private
-   * @param {SearchArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleSearch(args: SearchArgs): Promise<any> {
-    const error = this.validate(args, ['text']);
-    if (error) {
-      return error;
-    }
+  private async handleSearch(args: { text: string }) {
     await this.client.search(args.text);
     const title = await this.client.getTitle();
     const url = await this.client.getUrl();
-    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+    const { innerHeight, scrollHeight, scrollOffset, pages } = await this.client.getPageInfo();
     const tabs = (await this.client.listTabs()).length;
-    return { title, url, pages, innerHeight, scrollHeight, tabs };
+    return this.structured({ title, url, pages, innerHeight, scrollHeight, scrollOffset, tabs });
   }
 
   /**
-   * Handles tool listing requests from MCP clients
+   * Handles select tool requests
    *
    * @private
-   * @returns {Promise<{tools: Tool[]}>} Complete tool registry for MCP protocol
+   * @param {object} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
    */
-  private async handleTools(): Promise<{ tools: Tool[] }> {
-    return { tools: this.tool.getTools() };
+  private async handleSelect(args: { selector: string; value?: string; text?: string }) {
+    if (!args.value && !args.text) {
+      return this.client.response('Missing required argument: provide either `value` or `text`');
+    }
+    const result = await this.client.selectOption(args.selector, args.value, args.text);
+    return this.client.response(result);
+  }
+
+  /**
+   * Handles status tool requests
+   *
+   * Returns current Safari tabs and the full tool surface in one payload.
+   * Designed for session-start orientation: the calling instance learns
+   * what tools exist (with usage guidance) and what is currently open.
+   *
+   * @private
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleStatus() {
+    const tabs = await this.client.listFrontTabs();
+    const tools = this.getToolDefinitions();
+    return this.structured({ tabs, tools });
   }
 
   /**
    * Handles type tool requests
    *
    * @private
-   * @param {TypeArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleType(args: TypeArgs): Promise<any> {
-    const error = this.validate(args, ['text']);
-    if (error) {
-      return error;
+  private async handleType(args: { text: string; append: boolean; selector?: string; submit: boolean }) {
+    const result = await this.client.typeText(args.text, args.selector, args.append, args.submit);
+    return this.client.response(result);
+  }
+
+  /**
+   * Handles wait tool requests
+   *
+   * @private
+   * @param {object} args - Tool arguments
+   * @returns {Promise<any>} Tool execution response
+   */
+  private async handleWait(args: { selector?: string; selectorGone?: string; text?: string; timeoutMs?: number }) {
+    const provided = [args.selector, args.selectorGone, args.text].filter((v) => v !== undefined && v !== '').length;
+    if (provided !== 1) {
+      return this.client.response('Missing or ambiguous argument: provide exactly one of `selector`, `selectorGone`, or `text`');
     }
-    return await this.client.typeText(args.text, args.selector, args.append, args.submit);
+    const result = await this.client.wait(args);
+    return this.structured(result);
   }
 
   /**
    * Handles window tool requests
    *
    * @private
-   * @param {WindowArgs} args - Tool arguments
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleWindow(args: WindowArgs): Promise<any> {
-    const error = this.validate(args, ['action']);
-    if (error) {
-      return error;
-    }
+  private async handleWindow(args: { action: 'close' | 'list' | 'open' | 'switch'; index?: number; url?: string }) {
     switch (args.action) {
-      case 'list':
-        return { tabs: await this.client.listTabs() };
-      case 'switch':
+      case 'list': {
+        const tabs = await this.client.listTabs();
+        return this.structured({ tabs });
+      }
+      case 'switch': {
         if (args.index === undefined) {
-          return 'Missing required argument: index';
+          return this.client.response('Missing required argument: index');
         }
         await this.client.switchTab(args.index);
-        return { tabs: await this.client.listTabs() };
-      case 'close':
+        const tabs = await this.client.listTabs();
+        return this.structured({ tabs });
+      }
+      case 'close': {
         if (args.index === undefined) {
-          return 'Missing required argument: index';
+          return this.client.response('Missing required argument: index');
         }
         await this.client.closeTab(args.index);
-        return { tabs: await this.client.listTabs() };
-      case 'open':
+        const tabs = await this.client.listTabs();
+        return this.structured({ tabs });
+      }
+      case 'open': {
         await this.client.openTab(args.url);
-        return { tabs: await this.client.listTabs() };
-      default:
-        return `Unknown action: ${args.action}`;
+        const tabs = await this.client.listTabs();
+        return this.structured({ tabs });
+      }
     }
   }
 
   /**
-   * Maps tool definitions to corresponding handler functions
+   * Registers every tool with the McpServer registry
    *
-   * Creates comprehensive mapping between tool definitions and handlers,
-   * enabling dynamic default value injection from tool schemas.
+   * Each call wires a tool definition from `McpTool` to its handler.
+   * The SDK validates incoming arguments against the tool's `inputSchema`
+   * and (when present) the tool's response against its `outputSchema`.
    *
    * @private
-   * @returns {{ tool: Tool; handler: ToolHandler }[]} Array of tool-to-handler mappings
    */
-  private setServerTools(): { tool: Tool; handler: ToolHandler }[] {
-    return [
-      { tool: this.tool.click(), handler: this.handleClick.bind(this) },
-      { tool: this.tool.close(), handler: this.handleClose.bind(this) },
-      { tool: this.tool.execute(), handler: this.handleExecute.bind(this) },
-      { tool: this.tool.navigate(), handler: this.handleNavigate.bind(this) },
-      { tool: this.tool.open(), handler: this.handleOpen.bind(this) },
-      { tool: this.tool.read(), handler: this.handleRead.bind(this) },
-      { tool: this.tool.refresh(), handler: this.handleRefresh.bind(this) },
-      { tool: this.tool.screenshot(), handler: this.handleScreenshot.bind(this) },
-      { tool: this.tool.scroll(), handler: this.handleScroll.bind(this) },
-      { tool: this.tool.search(), handler: this.handleSearch.bind(this) },
-      { tool: this.tool.type(), handler: this.handleType.bind(this) },
-      { tool: this.tool.window(), handler: this.handleWindow.bind(this) }
-    ];
+  private registerAll(): void {
+    this.server.registerTool('click', this.tool.click(), this.handleClick.bind(this));
+    this.server.registerTool('close', this.tool.close(), this.handleClose.bind(this));
+    this.server.registerTool('execute', this.tool.execute(), this.handleExecute.bind(this));
+    this.server.registerTool('hover', this.tool.hover(), this.handleHover.bind(this));
+    this.server.registerTool('inspect', this.tool.inspect(), this.handleInspect.bind(this));
+    this.server.registerTool('navigate', this.tool.navigate(), this.handleNavigate.bind(this));
+    this.server.registerTool('open', this.tool.open(), this.handleOpen.bind(this));
+    this.server.registerTool('read', this.tool.read(), this.handleRead.bind(this));
+    this.server.registerTool('refresh', this.tool.refresh(), this.handleRefresh.bind(this));
+    this.server.registerTool('screenshot', this.tool.screenshot(), this.handleScreenshot.bind(this));
+    this.server.registerTool('scroll', this.tool.scroll(), this.handleScroll.bind(this));
+    this.server.registerTool('search', this.tool.search(), this.handleSearch.bind(this));
+    this.server.registerTool('select', this.tool.select(), this.handleSelect.bind(this));
+    this.server.registerTool('status', this.tool.status(), this.handleStatus.bind(this));
+    this.server.registerTool('type', this.tool.type(), this.handleType.bind(this));
+    this.server.registerTool('wait', this.tool.wait(), this.handleWait.bind(this));
+    this.server.registerTool('window', this.tool.window(), this.handleWindow.bind(this));
   }
-
   /**
-   * Sets up MCP request handlers for tool execution and tool listing
+   * Builds an output payload for tool responses with structured content
    *
    * @private
+   * @param {object} output - Structured output payload
+   * @returns {object} CallToolResult with both text content and structuredContent
    */
-  private setupHandlers(): void {
-    this.server.server.setRequestHandler(CallToolRequestSchema, this.handleRequest.bind(this));
-    this.server.server.setRequestHandler(ListToolsRequestSchema, this.handleTools.bind(this));
-  }
-
-  /**
-   * Sets up tool handlers registry with default value injection
-   *
-   * Registers all tool handlers with argument processing that injects
-   * default values from tool schema definitions before execution.
-   *
-   * @private
-   */
-  private setupToolHandlers(): void {
-    const tools = this.setServerTools();
-    for (const { tool, handler } of tools) {
-      const wrappedHandler: ToolHandler = async (args: unknown) => {
-        const processedArgs = args as Record<string, unknown>;
-        const properties = tool.inputSchema?.properties;
-        if (properties) {
-          Object.entries(properties).forEach(([name, value]) => {
-            const schema = value as { default?: unknown };
-            if (processedArgs[name] === undefined && schema.default !== undefined) {
-              processedArgs[name] = schema.default;
-            }
-          });
-        }
-        return await handler(processedArgs);
-      };
-      this.toolHandlers.set(tool.name, wrappedHandler);
-    }
-  }
-
-  /**
-   * Validates required arguments for tool handler methods using Zod schemas
-   *
-   * Performs runtime validation of tool arguments against required field specifications,
-   * ensuring type safety and proper error handling for missing parameters.
-   *
-   * @private
-   * @param {unknown} args - Tool arguments object to validate
-   * @param {string[]} fields - Array of required field names for validation
-   * @returns {string | null} Error message if validation fails, null if all requirements met
-   */
-  private validate(args: unknown, fields: string[]): string | null {
-    const type: Record<string, z.ZodType> = {};
-    for (const field of fields) {
-      type[field] = z.union([
-        z.number(),
-        z.string().min(1)
-      ]);
-    }
-    const schema = z.object(type);
-    const result = schema.safeParse(args);
-    if (!result.success) {
-      const missing = result.error.issues.map(issue => issue.path[0]);
-      return `Missing required arguments: ${missing.join(', ')}`;
-    }
-    return null;
+  private structured<T extends Record<string, unknown>>(output: T): { content: { type: 'text'; text: string }[]; structuredContent: T } {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(output) }],
+      structuredContent: output
+    };
   }
 
   /**
