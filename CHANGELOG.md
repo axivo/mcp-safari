@@ -4,6 +4,26 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-05-07
+
+### Added
+
+- Constant `NO_WINDOW_ERROR` deduplicating the observe-operation no-window error message
+- Default exhaustiveness branch on `handleWindow` action switch with `never`-typed assertion
+- Helper `runExec` consolidating callback-based `execFile` invocations into a single promise wrapper
+- Public `escapeForJs` method on `Client` for JavaScript single-quoted string literal escaping
+
+### Changed
+
+- AppleScript template parsing moved from per-instance constructor to once-per-class-load static field initializer
+- Method `escapeForJs` made public so `mcp.ts` can share the same escaping logic instead of duplicating it inline
+- Single-line `if` statements expanded to braces-always form across `automation.ts`, `browser.ts`, and `client.ts`
+
+### Fixed
+
+- `getSearchUrl` regex non-null assertion replaced with explicit error when `NSPreferredWebServices` cannot be parsed
+- Empty `catch` block in `injectErrorCaptureEarly` annotated with explanatory comment instead of silent swallow
+
 ## [1.1.0] - 2026-05-04
 
 ### Added

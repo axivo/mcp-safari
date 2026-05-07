@@ -111,9 +111,13 @@ export class Browser {
         return text.trim().toLowerCase();
       }
       function isVisible(el: Element): boolean {
-        if (!el.getBoundingClientRect) return false;
+        if (!el.getBoundingClientRect) {
+          return false;
+        }
         const rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return false;
+        if (rect.width === 0 && rect.height === 0) {
+          return false;
+        }
         const style = window.getComputedStyle(el);
         return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
       }
@@ -192,9 +196,13 @@ export class Browser {
         return text.trim().toLowerCase();
       }
       function isVisible(el: Element): boolean {
-        if (!el.getBoundingClientRect) return false;
+        if (!el.getBoundingClientRect) {
+          return false;
+        }
         const rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return false;
+        if (rect.width === 0 && rect.height === 0) {
+          return false;
+        }
         const style = window.getComputedStyle(el);
         return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
       }
@@ -443,11 +451,17 @@ export class Browser {
       for (let i = 0; i < anchors.length; i++) {
         const a = anchors[i] as HTMLAnchorElement;
         const href = a.href;
-        if (!href || href.startsWith('javascript:')) continue;
+        if (!href || href.startsWith('javascript:')) {
+          continue;
+        }
         const text = (a.textContent || a.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ');
-        if (!text) continue;
+        if (!text) {
+          continue;
+        }
         const key = text + '|' + href;
-        if (seen.has(key)) continue;
+        if (seen.has(key)) {
+          continue;
+        }
         seen.add(key);
         out.push({ text: text.substring(0, 200), href });
       }

@@ -20,6 +20,11 @@ import { Browser } from '../lib/browser.js';
 type TabTarget = { windowId: number; index: number };
 
 /**
+ * Error message thrown by observe operations when Safari has no windows open
+ */
+const NO_WINDOW_ERROR = 'No Safari window is open. Use an act operation (navigate, open) first or open a window in Safari.';
+
+/**
  * Safari AppleScript automation client
  *
  * Provides Safari browser automation through AppleScript and JXA,
@@ -65,15 +70,7 @@ export class Client {
    * @returns {Promise<string>} Script output
    */
   private async appleScript(script: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      execFile('osascript', ['-e', script], { maxBuffer: 50 * 1024 * 1024 }, (error, stdout) => {
-        if (error) {
-          reject(new Error(error.message));
-          return;
-        }
-        resolve(stdout.trim());
-      });
-    });
+    return this.runExec('osascript', ['-e', script]);
   }
 
   /**
@@ -84,17 +81,12 @@ export class Client {
    * @returns {Promise<string>} Full search URL with encoded query
    */
   private async getSearchUrl(query: string): Promise<string> {
-    const output = await new Promise<string>((resolve, reject) => {
-      execFile('defaults', ['read', '-g', 'NSPreferredWebServices'], (error, stdout) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(stdout);
-      });
-    });
+    const output = await this.runExec('defaults', ['read', '-g', 'NSPreferredWebServices'], false);
     const match = output.match(/NSProviderIdentifier\s*=\s*"([^"]+)"/);
-    const domain = match![1].split('.').reverse().join('.');
+    if (!match || !match[1]) {
+      throw new Error('Could not determine default search engine from NSPreferredWebServices');
+    }
+    const domain = match[1].split('.').reverse().join('.');
     const url = new URL(`/search?q=${encodeURIComponent(query)}`, `https://${domain}`);
     return url.toString();
   }
@@ -132,7 +124,9 @@ export class Client {
         if (state === 'complete') {
           return;
         }
-      } catch { }
+      } catch {
+        // Page not yet ready for script injection; retry next iteration.
+      }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
@@ -145,15 +139,7 @@ export class Client {
    * @returns {Promise<string>} Script output
    */
   private async jxa(script: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      execFile('osascript', ['-l', 'JavaScript', '-e', script], { maxBuffer: 50 * 1024 * 1024 }, (error, stdout) => {
-        if (error) {
-          reject(new Error(error.message));
-          return;
-        }
-        resolve(stdout.trim());
-      });
-    });
+    return this.runExec('osascript', ['-l', 'JavaScript', '-e', script]);
   }
 
   /**
@@ -173,16 +159,41 @@ export class Client {
     if (index !== undefined) {
       const frontId = await this.appleScript(this.automation.frontWindowId());
       if (!frontId) {
-        throw new Error('No Safari window is open. Use an act operation (navigate, open) first or open a window in Safari.');
+        throw new Error(NO_WINDOW_ERROR);
       }
       return { windowId: parseInt(frontId, 10), index };
     }
     const result = await this.appleScript(this.automation.frontWindowAndTab());
     if (!result) {
-      throw new Error('No Safari window is open. Use an act operation (navigate, open) first or open a window in Safari.');
+      throw new Error(NO_WINDOW_ERROR);
     }
     const [windowId, currentIndex] = result.split(',').map((n) => parseInt(n, 10));
     return { windowId, index: currentIndex };
+  }
+
+  /**
+   * Executes a child process and returns trimmed stdout
+   *
+   * Wraps the callback-based `execFile` in a promise with a 50MB buffer.
+   * Used as the foundation for `appleScript`, `jxa`, and any other shell
+   * invocation. Trimming the output is opt-in via the `trim` flag.
+   *
+   * @private
+   * @param {string} cmd - Command to execute
+   * @param {string[]} args - Command arguments
+   * @param {boolean} [trim=true] - Whether to trim trailing whitespace from stdout
+   * @returns {Promise<string>} Process stdout
+   */
+  private async runExec(cmd: string, args: string[], trim: boolean = true): Promise<string> {
+    return new Promise((resolve, reject) => {
+      execFile(cmd, args, { maxBuffer: 50 * 1024 * 1024 }, (error, stdout) => {
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve(trim ? stdout.trim() : stdout);
+      });
+    });
   }
 
   /**
@@ -226,7 +237,7 @@ export class Client {
    * @returns {Promise<boolean>} Whether the element was found within pageLoadTimeout
    */
   private async waitForSelector(target: TabTarget, selector: string): Promise<boolean> {
-    const escaped = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const escaped = this.escapeForJs(selector);
     const start = Date.now();
     while (Date.now() - start < this.pageLoadTimeout) {
       const found = await this.executeScript(target, `document.querySelector('${escaped}') !== null`);
@@ -295,9 +306,22 @@ export class Client {
     try {
       await this.appleScript(this.automation.closeTab(this.workingTab.windowId, this.workingTab.index));
     } catch {
-      // tab already gone - fine
+      // Tab may already be closed by the user; drop the reference unconditionally below.
     }
     this.workingTab = null;
+  }
+
+  /**
+   * Escapes a string for safe interpolation into a JavaScript script literal
+   *
+   * Escapes backslashes and single quotes so the value can be wrapped in
+   * single quotes without breaking out of the string context.
+   *
+   * @param {string} value - String to escape
+   * @returns {string} Escaped string safe for single-quoted JavaScript literal
+   */
+  escapeForJs(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 
   /**
@@ -757,21 +781,27 @@ export class Client {
     const target = await this.resolveTarget();
     const start = Date.now();
     const timeout = opts.timeoutMs ?? this.pageLoadTimeout;
-    const escapedSelector = opts.selector ? opts.selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
-    const escapedGone = opts.selectorGone ? opts.selectorGone.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
-    const escapedText = opts.text ? opts.text.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+    const escapedSelector = opts.selector ? this.escapeForJs(opts.selector) : '';
+    const escapedGone = opts.selectorGone ? this.escapeForJs(opts.selectorGone) : '';
+    const escapedText = opts.text ? this.escapeForJs(opts.text) : '';
     while (Date.now() - start < timeout) {
       if (opts.selector) {
         const found = await this.executeScript(target, `document.querySelector('${escapedSelector}') !== null`);
-        if (found === 'true') return { matched: true, elapsedMs: Date.now() - start };
+        if (found === 'true') {
+          return { matched: true, elapsedMs: Date.now() - start };
+        }
       }
       if (opts.selectorGone) {
         const found = await this.executeScript(target, `document.querySelector('${escapedGone}') !== null`);
-        if (found === 'false') return { matched: true, elapsedMs: Date.now() - start };
+        if (found === 'false') {
+          return { matched: true, elapsedMs: Date.now() - start };
+        }
       }
       if (opts.text) {
         const has = await this.executeScript(target, `(document.body.innerText || '').indexOf('${escapedText}') !== -1 ? 'true' : 'false'`);
-        if (has === 'true') return { matched: true, elapsedMs: Date.now() - start };
+        if (has === 'true') {
+          return { matched: true, elapsedMs: Date.now() - start };
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

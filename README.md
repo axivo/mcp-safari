@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/@axivo/mcp-safari.svg?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@axivo/mcp-safari)
 [![Socket](https://badge.socket.dev/npm/package/@axivo/mcp-safari)](https://socket.dev/npm/package/@axivo/mcp-safari)
 [![Node.js](https://img.shields.io/badge/Node.js->=24.0.0-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript->=5.0.0-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript->=6.0.0-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
 A MCP (Model Context Protocol) server for visual web access through Safari.
 
