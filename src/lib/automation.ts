@@ -148,30 +148,14 @@ end tell
 /**
  * AppleScript template builder for Safari automation
  *
- * Parses all scripts from the embedded SCRIPTS constant at
- * construction time and provides typed methods with parameter
- * substitution for each automation command.
+ * Parses all scripts from the embedded osaScripts constant once at class
+ * load time and provides typed methods with parameter substitution for
+ * each automation command.
  *
  * @class Automation
  */
 export class Automation {
-  private scripts: Map<string, string>;
-
-  /**
-   * Creates a new AppleScript instance
-   *
-   * Parses the embedded script constant into named sections.
-   */
-  constructor() {
-    this.scripts = new Map<string, string>();
-    const sections = osaScripts.split(/^--- /m);
-    for (let i = 1; i < sections.length; i++) {
-      const newline = sections[i].indexOf('\n');
-      const name = sections[i].substring(0, newline).trim();
-      const body = sections[i].substring(newline + 1).trim();
-      this.scripts.set(name, body);
-    }
-  }
+  private static readonly scripts: Map<string, string> = Automation.parseScripts();
 
   /**
    * Looks up a parsed script by name, throwing if absent
@@ -181,11 +165,34 @@ export class Automation {
    * @returns {string} Script body
    */
   private get(name: string): string {
-    const body = this.scripts.get(name);
+    const body = Automation.scripts.get(name);
     if (body === undefined) {
       throw new Error(`Missing AppleScript section: ${name}`);
     }
     return body;
+  }
+
+  /**
+   * Parses the embedded osaScripts string into a name-indexed Map
+   *
+   * Splits on `--- name` markers and strips leading/trailing whitespace
+   * from each section body. Runs exactly once during static field
+   * initialization regardless of how many instances are created.
+   *
+   * @private
+   * @static
+   * @returns {Map<string, string>} Section name to script body
+   */
+  private static parseScripts(): Map<string, string> {
+    const map = new Map<string, string>();
+    const sections = osaScripts.split(/^--- /m);
+    for (let i = 1; i < sections.length; i++) {
+      const newline = sections[i].indexOf('\n');
+      const name = sections[i].substring(0, newline).trim();
+      const body = sections[i].substring(newline + 1).trim();
+      map.set(name, body);
+    }
+    return map;
   }
 
   /**

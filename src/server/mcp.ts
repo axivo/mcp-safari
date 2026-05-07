@@ -257,7 +257,7 @@ export class Mcp {
     if (args.mode === 'links') {
       output.links = await this.client.readLinks(args.selector, args.index);
     } else {
-      const escaped = args.selector ? args.selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+      const escaped = args.selector ? this.client.escapeForJs(args.selector) : '';
       const textScript = args.selector
         ? `(document.querySelector('${escaped}') || {}).innerText || ''`
         : 'document.body.innerText';
@@ -443,6 +443,10 @@ export class Mcp {
         await this.client.openTab(args.url);
         const tabs = await this.client.listTabs();
         return this.structured({ tabs });
+      }
+      default: {
+        const exhaustive: never = args.action;
+        throw new Error(`Unhandled window action: ${exhaustive}`);
       }
     }
   }
