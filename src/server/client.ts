@@ -8,8 +8,9 @@
 
 import { execFile } from 'child_process';
 import { readFileSync, unlinkSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { dirname, join } from 'path';
+import sharp from 'sharp';
 import { fileURLToPath } from 'url';
 import { Automation } from '../lib/automation.js';
 import { Browser } from '../lib/browser.js';
@@ -18,6 +19,23 @@ import { Browser } from '../lib/browser.js';
  * Tab target - a (windowId, tabIndex) pair identifying a specific Safari tab
  */
 type TabTarget = { windowId: number; index: number };
+
+/**
+ * Screenshot mode - selects what gets captured
+ */
+type ScreenshotMode = 'element' | 'page' | 'screen' | 'window';
+
+/**
+ * Screenshot result - inline base64 image or a saved file path with dimensions
+ */
+type ScreenshotResult =
+  | { kind: 'inline'; base64: string; mimeType: string }
+  | { kind: 'saved'; path: string; width: number; height: number; mimeType: string };
+
+/**
+ * Screenshot output target - either a temp file (inline) or a user-facing save
+ */
+type ScreenshotTarget = { path: string; type: string; mimeType: string; isTemp: boolean };
 
 /**
  * Error message thrown by observe operations when Safari has no windows open
@@ -194,6 +212,279 @@ export class Client {
         resolve(trim ? stdout.trim() : stdout);
       });
     });
+  }
+
+  /**
+   * Runs `screencapture` with the given arguments
+   *
+   * @private
+   * @param {string[]} args - Arguments to pass to `screencapture`
+   * @returns {Promise<void>}
+   */
+  private async screenshotCapture(args: string[]): Promise<void> {
+    await this.runExec('screencapture', args);
+  }
+
+  /**
+   * Captures the bounding rect of a CSS-selected element
+   *
+   * Captures the full Safari window first, then crops to the element's
+   * viewport rect. Window-then-crop avoids the screen-coordinate conversion
+   * that `-R` would otherwise require, and naturally handles retina scaling
+   * because the captured window image already carries the device pixel ratio.
+   *
+   * @private
+   * @param {TabTarget} target - Front tab containing the element
+   * @param {string} selector - CSS selector for the target element
+   * @param {ScreenshotTarget} output - Where to write the cropped image
+   * @returns {Promise<void>}
+   */
+  private async screenshotElement(target: TabTarget, selector: string, output: ScreenshotTarget): Promise<void> {
+    const initialInspect = await this.executeScript(target, this.browser.inspect(selector));
+    const initialParsed = JSON.parse(initialInspect) as { found: boolean; rect?: { x: number; y: number; width: number; height: number } };
+    if (!initialParsed.found || !initialParsed.rect) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    const originalOffsetRaw = await this.executeScript(target, 'window.scrollY');
+    const originalOffset = parseInt(originalOffsetRaw, 10) || 0;
+    try {
+      await this.executeScript(target, this.browser.scrollElementIntoView(selector));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const inspectResult = await this.executeScript(target, this.browser.inspect(selector));
+      const parsed = JSON.parse(inspectResult) as { found: boolean; rect?: { x: number; y: number; width: number; height: number } };
+      if (!parsed.found || !parsed.rect) {
+        throw new Error(`Element not found after scroll for selector: ${selector}`);
+      }
+      const geometryRaw = await this.executeScript(target, this.browser.scrollGeometry());
+      const geometry = JSON.parse(geometryRaw) as { innerHeight: number; devicePixelRatio: number };
+      const dpr = geometry.devicePixelRatio || 1;
+      const windowPath = join(tmpdir(), `safari-window-${Date.now()}.png`);
+      await this.screenshotCapture(['-l', String(target.windowId), '-o', '-x', windowPath]);
+      try {
+        const windowMeta = await sharp(windowPath).metadata();
+        const windowImageHeight = windowMeta.height || 0;
+        const windowImageWidth = windowMeta.width || 0;
+        const chromeImagePixels = Math.max(0, windowImageHeight - Math.round(geometry.innerHeight * dpr));
+        const rectLeft = Math.round(parsed.rect.x * dpr);
+        const rectTop = chromeImagePixels + Math.round(parsed.rect.y * dpr);
+        const rectWidth = Math.max(1, Math.round(parsed.rect.width * dpr));
+        const rectHeight = Math.max(1, Math.round(parsed.rect.height * dpr));
+        const cropLeft = Math.max(0, Math.min(rectLeft, windowImageWidth - 1));
+        const cropTop = Math.max(0, Math.min(rectTop, windowImageHeight - 1));
+        const cropWidth = Math.max(1, Math.min(rectWidth, windowImageWidth - cropLeft));
+        const cropHeight = Math.max(1, Math.min(rectHeight, windowImageHeight - cropTop));
+        await sharp(windowPath)
+          .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })
+          .toFormat(output.type as keyof sharp.FormatEnum)
+          .toFile(output.path);
+      } finally {
+        try {
+          unlinkSync(windowPath);
+        } catch {
+          // Temp file already absent or unlinkable - safe to ignore.
+        }
+      }
+    } finally {
+      await this.executeScript(target, `window.scrollTo(0, ${originalOffset})`);
+    }
+  }
+
+  /**
+   * Builds a macOS-style screenshot filename from preferences
+   *
+   * Mirrors the format Apple's screencapture produces when honoring
+   * `com.apple.screencapture` defaults: `<name> [YYYY-MM-DD at H.MM.SS AM/PM].<type>`,
+   * with the timestamp omitted when `include-date` is disabled.
+   *
+   * @private
+   * @param {object} prefs - Resolved screenshot preferences
+   * @returns {string} Filename including extension
+   */
+  private screenshotFilename(prefs: { type: string; name: string; includeDate: boolean }): string {
+    if (!prefs.includeDate) {
+      return `${prefs.name}.${prefs.type}`;
+    }
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const hours24 = now.getHours();
+    const period = hours24 >= 12 ? 'PM' : 'AM';
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    const time = `${hours12}.${String(now.getMinutes()).padStart(2, '0')}.${String(now.getSeconds()).padStart(2, '0')}`;
+    return `${prefs.name} ${date} at ${time} ${period}.${prefs.type}`;
+  }
+
+  /**
+   * Captures the full scrollable page by viewport-stitching
+   *
+   * Reads page geometry, restores the original scroll offset on completion,
+   * scrolls in viewport-sized increments, captures the Safari window at each
+   * step, crops each capture to the content area, and composites the strips
+   * into a single tall image scaled by the device pixel ratio.
+   *
+   * @private
+   * @param {TabTarget} target - Front tab to capture
+   * @param {ScreenshotTarget} output - Where to write the stitched image
+   * @param {number} [settle] - ms to wait after each scroll for content to settle (default 500)
+   * @returns {Promise<void>}
+   */
+  private async screenshotPage(target: TabTarget, output: ScreenshotTarget, settle?: number): Promise<void> {
+    const settleMs = settle && settle >= 0 ? settle : 500;
+    const initialGeometryRaw = await this.executeScript(target, this.browser.scrollGeometry());
+    const initialGeometry = JSON.parse(initialGeometryRaw) as { innerHeight: number; scrollHeight: number; scrollOffset: number; devicePixelRatio: number };
+    const dpr = initialGeometry.devicePixelRatio || 1;
+    const originalOffset = initialGeometry.scrollOffset;
+    const viewport = initialGeometry.innerHeight;
+    const stickyStateRaw = await this.executeScript(target, this.browser.hideStickyElements());
+    const stickyState = JSON.parse(stickyStateRaw) as { id: string; visibility: string }[];
+    const scrollbarToken = await this.executeScript(target, this.browser.hideScrollbars());
+    const segments: { top: number; height: number; buffer: Buffer }[] = [];
+    const maxSegments = 60;
+    let nextRequestedY = 0;
+    let capturedTotal = 0;
+    try {
+      while (segments.length < maxSegments) {
+        await this.executeScript(target, `window.scrollTo(0, ${nextRequestedY})`);
+        await new Promise((resolve) => setTimeout(resolve, settleMs));
+        const liveGeometryRaw = await this.executeScript(target, this.browser.scrollGeometry());
+        const liveGeometry = JSON.parse(liveGeometryRaw) as { innerHeight: number; scrollHeight: number; scrollOffset: number; devicePixelRatio: number };
+        const currentTotal = liveGeometry.scrollHeight;
+        const actualOffset = liveGeometry.scrollOffset;
+        const windowPath = join(tmpdir(), `safari-page-${Date.now()}-${actualOffset}.png`);
+        await this.screenshotCapture(['-l', String(target.windowId), '-o', '-x', windowPath]);
+        let reachedTotal = false;
+        try {
+          const windowMeta = await sharp(windowPath).metadata();
+          const windowImageHeight = windowMeta.height || 0;
+          const windowImageWidth = windowMeta.width || 0;
+          const chromeImagePixels = Math.max(0, windowImageHeight - Math.round(viewport * dpr));
+          const alreadyCoveredImagePx = segments.length === 0 ? 0 : segments[segments.length - 1].top + segments[segments.length - 1].height;
+          const segmentTopInPage = Math.max(actualOffset * dpr, alreadyCoveredImagePx);
+          const segmentBottomInPage = Math.min((actualOffset + viewport) * dpr, currentTotal * dpr);
+          const segmentImageHeight = Math.max(0, Math.round(segmentBottomInPage - segmentTopInPage));
+          if (segmentImageHeight === 0) {
+            reachedTotal = true;
+          } else {
+            const skipFromTop = Math.round(segmentTopInPage - actualOffset * dpr);
+            const cropTop = chromeImagePixels + skipFromTop;
+            const cropped = await sharp(windowPath)
+              .extract({ left: 0, top: cropTop, width: windowImageWidth, height: segmentImageHeight })
+              .png()
+              .toBuffer();
+            segments.push({ top: Math.round(segmentTopInPage), height: segmentImageHeight, buffer: cropped });
+            const capturedTotal = segmentTopInPage + segmentImageHeight;
+            if (capturedTotal >= currentTotal * dpr) {
+              reachedTotal = true;
+            }
+          }
+        } finally {
+          try {
+            unlinkSync(windowPath);
+          } catch {
+            // Temp file already absent or unlinkable - safe to ignore.
+          }
+        }
+        if (reachedTotal) {
+          break;
+        }
+        nextRequestedY = actualOffset + viewport;
+      }
+      if (segments.length === 0) {
+        throw new Error('Page-mode capture produced no segments');
+      }
+      const compositeWidth = (await sharp(segments[0].buffer).metadata()).width || 0;
+      const compositeHeight = segments[segments.length - 1].top + segments[segments.length - 1].height;
+      await sharp({
+        create: {
+          width: compositeWidth,
+          height: compositeHeight,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 1 }
+        }
+      })
+        .composite(segments.map((s) => ({ input: s.buffer, top: s.top, left: 0 })))
+        .toFormat(output.type as keyof sharp.FormatEnum)
+        .toFile(output.path);
+    } finally {
+      await this.executeScript(target, this.browser.restoreScrollbars(scrollbarToken));
+      await this.executeScript(target, this.browser.restoreStickyElements(stickyState));
+      await this.executeScript(target, `window.scrollTo(0, ${originalOffset})`);
+    }
+  }
+
+  /**
+   * Resolves the screenshot output destination
+   *
+   * For inline captures returns a temp-file path. For shared captures reads
+   * the user's `com.apple.screencapture` defaults to determine the save
+   * folder and image type, then generates a macOS-style timestamped filename.
+   *
+   * @private
+   * @param {boolean} share - Whether the screenshot is being saved for the user
+   * @returns {Promise<ScreenshotTarget>} Output path, image type, mime type, and ownership
+   */
+  private async screenshotPath(share: boolean): Promise<ScreenshotTarget> {
+    if (!share) {
+      const path = join(tmpdir(), `safari-screenshot-${Date.now()}.png`);
+      return { path, type: 'png', mimeType: 'image/png', isTemp: true };
+    }
+    const prefs = await this.screenshotPreferences();
+    const filename = this.screenshotFilename(prefs);
+    return { path: join(prefs.folder, filename), type: prefs.type, mimeType: prefs.mimeType, isTemp: false };
+  }
+
+  /**
+   * Reads the user's `com.apple.screencapture` preferences
+   *
+   * Returns the four settings that determine where macOS writes screenshots
+   * and how they are named: `location` (folder), `type` (file extension),
+   * `name` (filename prefix), and `include-date` (whether the timestamp is
+   * appended). Each is read independently so a missing setting falls back to
+   * the macOS default rather than aborting the call.
+   *
+   * @private
+   * @returns {Promise<{folder: string; type: string; mimeType: string; name: string; includeDate: boolean}>} Resolved preferences
+   */
+  private async screenshotPreferences(): Promise<{ folder: string; type: string; mimeType: string; name: string; includeDate: boolean }> {
+    let location = '';
+    try {
+      location = await this.runExec('defaults', ['read', 'com.apple.screencapture', 'location']);
+    } catch {
+      location = '';
+    }
+    const folder = location.replace(/^~(?=\/|$)/, homedir()) || join(homedir(), 'Desktop');
+    let type = 'png';
+    try {
+      type = (await this.runExec('defaults', ['read', 'com.apple.screencapture', 'type'])) || 'png';
+    } catch {
+      type = 'png';
+    }
+    let name = 'Screenshot';
+    try {
+      const raw = await this.runExec('defaults', ['read', 'com.apple.screencapture', 'name']);
+      if (raw) {
+        name = raw;
+      }
+    } catch {
+      name = 'Screenshot';
+    }
+    let includeDate = true;
+    try {
+      const raw = await this.runExec('defaults', ['read', 'com.apple.screencapture', 'include-date']);
+      includeDate = raw !== '0' && raw.toLowerCase() !== 'false';
+    } catch {
+      includeDate = true;
+    }
+    const mimeMap: Record<string, string> = {
+      bmp: 'image/bmp',
+      gif: 'image/gif',
+      heic: 'image/heic',
+      jpeg: 'image/jpeg',
+      jpg: 'image/jpeg',
+      pdf: 'application/pdf',
+      png: 'image/png',
+      tiff: 'image/tiff'
+    };
+    return { folder, type, mimeType: mimeMap[type] || 'image/png', name, includeDate };
   }
 
   /**
@@ -724,25 +1015,52 @@ export class Client {
   }
 
   /**
-   * Captures a screenshot of the front window's current tab
+   * Captures a screenshot in the selected mode and returns it inline or saved
    *
-   * @returns {Promise<string>} Base64-encoded PNG screenshot
+   * Mode `window` captures the Safari window. Mode `element` captures the
+   * bounding rect of a CSS selector. Mode `page` captures the full scrollable
+   * page by viewport-stitching. Mode `screen` captures the entire main display.
+   *
+   * When `share` is true the image is saved to the user's screenshot folder
+   * (read from `defaults read com.apple.screencapture location`, falling back
+   * to `~/Desktop`) using the macOS naming convention. When false the image is
+   * captured to a temp file, read into memory as base64, and the temp file is
+   * removed.
+   *
+   * @param {ScreenshotMode} [mode='window'] - Capture mode
+   * @param {string} [selector] - CSS selector for element mode
+   * @param {boolean} [share=false] - Save to disk and return path instead of base64
+   * @param {number} [display] - Display index for screen mode (1-based; defaults to main display)
+   * @param {number} [settle] - Page mode: ms to wait after each scroll for content to settle (default 500)
+   * @returns {Promise<ScreenshotResult>} Inline base64 or saved-file metadata
    */
-  async takeScreenshot(): Promise<string> {
-    const target = await this.resolveTarget();
-    const tmpFile = join(tmpdir(), `safari-screenshot-${Date.now()}.png`);
-    await new Promise<void>((resolve, reject) => {
-      execFile('screencapture', ['-l', String(target.windowId), '-o', '-x', tmpFile], (error) => {
-        if (error) {
-          reject(new Error(error.message));
-          return;
-        }
-        resolve();
-      });
-    });
-    const buffer = readFileSync(tmpFile);
-    unlinkSync(tmpFile);
-    return buffer.toString('base64');
+  async takeScreenshot(mode: ScreenshotMode = 'window', selector?: string, share: boolean = false, display?: number, settle?: number): Promise<ScreenshotResult> {
+    if (mode === 'element' && !selector) {
+      throw new Error('Element mode requires a `selector` argument');
+    }
+    const output = await this.screenshotPath(share);
+    if (mode === 'page') {
+      const target = await this.resolveTarget();
+      await this.screenshotPage(target, output, settle);
+    } else if (mode === 'element') {
+      const target = await this.resolveTarget();
+      await this.screenshotElement(target, selector as string, output);
+    } else if (mode === 'screen') {
+      const displayIndex = display && display > 0 ? display : 1;
+      await this.screenshotCapture(['-D', String(displayIndex), '-t', output.type, '-x', output.path]);
+    } else {
+      const target = await this.resolveTarget();
+      await this.screenshotCapture(['-l', String(target.windowId), '-o', '-t', output.type, '-x', output.path]);
+    }
+    if (share) {
+      const meta = await sharp(output.path).metadata();
+      return { kind: 'saved', path: output.path, width: meta.width || 0, height: meta.height || 0, mimeType: output.mimeType };
+    }
+    const buffer = readFileSync(output.path);
+    if (output.isTemp) {
+      unlinkSync(output.path);
+    }
+    return { kind: 'inline', base64: buffer.toString('base64'), mimeType: output.mimeType };
   }
 
   /**

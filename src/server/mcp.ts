@@ -297,15 +297,36 @@ export class Mcp {
    * Handles screenshot tool requests
    *
    * @private
+   * @param {object} args - Tool arguments
    * @returns {Promise<any>} Tool execution response
    */
-  private async handleScreenshot() {
-    const base64Png = await this.client.takeScreenshot();
-    const { innerHeight, scrollHeight, pages } = await this.client.getPageInfo();
+  private async handleScreenshot(args: { display?: number; mode: 'element' | 'page' | 'screen' | 'window'; selector?: string; settle?: number; share: boolean }) {
+    const result = await this.client.takeScreenshot(args.mode, args.selector, args.share, args.display, args.settle);
+    const browserMeta = args.mode === 'screen' ? null : await this.client.getPageInfo();
+    if (result.kind === 'saved') {
+      const payload: Record<string, unknown> = { path: result.path, width: result.width, height: result.height, mimeType: result.mimeType };
+      if (browserMeta) {
+        payload.innerHeight = browserMeta.innerHeight;
+        payload.scrollHeight = browserMeta.scrollHeight;
+        payload.pages = browserMeta.pages;
+      }
+      return {
+        content: [
+          { type: 'text' as const, text: JSON.stringify(payload) }
+        ]
+      };
+    }
+    if (browserMeta) {
+      return {
+        content: [
+          { type: 'image' as const, data: result.base64, mimeType: result.mimeType },
+          { type: 'text' as const, text: JSON.stringify({ innerHeight: browserMeta.innerHeight, scrollHeight: browserMeta.scrollHeight, pages: browserMeta.pages }) }
+        ]
+      };
+    }
     return {
       content: [
-        { type: 'image' as const, data: base64Png, mimeType: 'image/png' },
-        { type: 'text' as const, text: JSON.stringify({ innerHeight, scrollHeight, pages }) }
+        { type: 'image' as const, data: result.base64, mimeType: result.mimeType }
       ]
     };
   }

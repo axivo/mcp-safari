@@ -35,6 +35,15 @@
       ]
     },
     {
+      "enabled": false,
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ]
+    },
+    {
       "enabled": true,
       "matchDatasources": [
         "node-version"
@@ -49,6 +58,7 @@
   ],
   "prConcurrentLimit": 0,
   "prHourlyLimit": 0,
+  "rangeStrategy": "bump",
   "semanticCommits": "enabled",
   "separateMajorMinor": false,
   "separateMinorPatch": false

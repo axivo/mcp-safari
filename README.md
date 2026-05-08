@@ -80,6 +80,7 @@ All variables are optional:
 - "_Read all links on this page_"
 
 > [!NOTE]
+>
 > The "use `status` tool" instruction helps Claude pause and process the `_meta.usage` guidelines before interacting with the browser.
 
 ### MCP Tools
@@ -156,8 +157,15 @@ Call `status` first at session start to get the runtime state and full tool surf
      - `selector` (string): CSS selector to wait for after reload
 
 10. `screenshot`
-    - Capture viewport of the front tab as base64 PNG
+    - Capture the Safari window, an element, the full page, or the screen
     - Type: `observe` tool
+    - Optional inputs:
+      - `display` (number): Display index for `screen` mode, 1-based, defaults to the main display
+      - `mode` (string: `element`, `page`, `screen`, `window`, default: `window`): Capture mode
+      - `selector` (string): CSS selector for `element` mode
+      - `settle` (number): For `page` mode, milliseconds to wait after each scroll for content to settle (default: `500`). Raise for slow dynamic sites, lower for static sites.
+      - `share` (boolean, default: `false`): Save to disk and return only the file path instead of the inline image
+    - Returns: Inline base64 image when `share` is `false`, or `{ path, width, height, mimeType, ... }` when `share` is `true`. Browser metadata `{ innerHeight, scrollHeight, pages }` is included for non-`screen` modes.
 
 11. `scroll`
     - Scroll by direction or to a viewport-page index
