@@ -351,14 +351,22 @@ export class McpTool {
   }
 
   /**
-   * Creates MCP tool for capturing page screenshots
+   * Creates MCP tool for capturing screenshots
    *
-   * Captures a screenshot of the current browser viewport,
-   * returning it as a base64 PNG image.
+   * Captures the Safari window, a specific element, the full scrollable page,
+   * or the entire screen. Returns the image as base64 inline by default, or
+   * saves it to the user's screenshot folder when `share` is true.
    */
   screenshot() {
     return {
-      description: 'Capture a screenshot of the current browser viewport',
+      description: 'Capture a screenshot of the browser window, an element, the full page, or the screen',
+      inputSchema: {
+        display: z.coerce.number().optional().describe('Display index for screen mode (1-based; defaults to the main display)'),
+        mode: z.enum(['element', 'page', 'screen', 'window']).default('window').describe('Capture mode'),
+        selector: z.string().optional().describe('CSS selector for element mode'),
+        settle: z.coerce.number().optional().describe('Page mode: ms to wait after each scroll for content to settle (default 500)'),
+        share: z.coerce.boolean().default(false).describe('Save to disk and return path instead of inline image')
+      },
       annotations: {
         title: 'Screenshot',
         readOnlyHint: true,
@@ -367,9 +375,16 @@ export class McpTool {
       },
       _meta: {
         usage: [
+          'Default `mode: "window"` captures the Safari window',
+          'Default `share: false` returns the image inline as base64',
           'Prefer `read` over `screenshot` for identifying page elements and content',
-          'Use `scroll` to position the viewport before capturing',
-          'Use `screenshot` for visual verification of images and layouts'
+          'Use `mode: "element"` with `selector` to capture a specific element',
+          'Use `mode: "page"` to capture the full scrollable page (large output, prefer `share: true`)',
+          'Use `settle` to tune the per-scroll wait in `mode: "page"` (default 500ms; raise for slow dynamic sites, lower for static sites)',
+          'Use `mode: "screen"` to capture the entire display, including content outside Safari',
+          'Use `display` with `mode: "screen"` to target a specific display (1-based) on multi-monitor setups',
+          'Use `share: true` to save the image to the user screenshot folder and return only the path',
+          'Use `scroll` to position the viewport before capturing in window mode'
         ]
       }
     };

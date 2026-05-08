@@ -301,6 +301,60 @@ export class Browser {
   }
 
   /**
+   * Builds a script to hide page scrollbars during full-page capture
+   *
+   * Injects a style element that suppresses overlay scrollbars on Safari
+   * (`::-webkit-scrollbar`) for the entire page and any scrollable descendants.
+   * Returns the injected element's id so a follow-up call can remove it after
+   * the capture completes. Idempotent against multiple invocations because
+   * the id is unique per call.
+   *
+   * @returns {string} Browser script string
+   */
+  hideScrollbars(): string {
+    function script(): string {
+      const id = '__safariScrollbarHide' + Date.now();
+      const style = document.createElement('style');
+      style.id = id;
+      style.textContent = '*::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; } html, body { -ms-overflow-style: none !important; scrollbar-width: none !important; }';
+      document.head.appendChild(style);
+      return id;
+    }
+    return this.serialize(script);
+  }
+
+  /**
+   * Builds a script to hide every position:fixed and position:sticky element
+   *
+   * Walks the DOM, identifies elements whose computed `position` is `fixed`
+   * or `sticky`, tags each one with a unique data attribute, captures their
+   * existing inline `visibility` style, and applies `visibility: hidden`.
+   * Returns the captured state as a JSON array so a follow-up call can
+   * restore the original styles after a page-mode screenshot completes.
+   *
+   * @returns {string} Browser script string
+   */
+  hideStickyElements(): string {
+    function script(): string {
+      const all = document.querySelectorAll<HTMLElement>('*');
+      const state: { id: string; visibility: string }[] = [];
+      let counter = 0;
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i];
+        const position = window.getComputedStyle(el).position;
+        if (position === 'fixed' || position === 'sticky') {
+          const id = '__safariSticky' + counter++;
+          el.setAttribute('data-safari-sticky', id);
+          state.push({ id, visibility: el.style.visibility });
+          el.style.visibility = 'hidden';
+        }
+      }
+      return JSON.stringify(state);
+    }
+    return this.serialize(script);
+  }
+
+  /**
    * Builds a script to dispatch hover events on an element
    *
    * Fires mouseenter and mouseover at the element, plus pointerenter and
@@ -484,6 +538,91 @@ export class Browser {
         innerHeight: window.innerHeight,
         scrollHeight: document.body.scrollHeight,
         scrollOffset: window.scrollY
+      });
+    }
+    return this.serialize(script);
+  }
+
+  /**
+   * Builds a script to remove a previously injected scrollbar-hiding style
+   *
+   * @param {string} id - The style element id returned by hideScrollbars
+   * @returns {string} Browser script string
+   */
+  restoreScrollbars(id: string): string {
+    function script(id: string): string {
+      const el = document.getElementById(id);
+      if (el) {
+        el.remove();
+      }
+      return 'restored';
+    }
+    return this.serialize(script, id);
+  }
+
+  /**
+   * Builds a script to restore visibility on previously hidden sticky elements
+   *
+   * Re-applies each captured inline `visibility` value (which may be the empty
+   * string when nothing was set originally) and removes the temporary
+   * data-safari-sticky tag. Idempotent against partial application.
+   *
+   * @param {object[]} state - Hidden-element state captured by hideStickyElements
+   * @returns {string} Browser script string
+   */
+  restoreStickyElements(state: { id: string; visibility: string }[]): string {
+    function script(state: { id: string; visibility: string }[]): string {
+      for (let i = 0; i < state.length; i++) {
+        const entry = state[i];
+        const el = document.querySelector<HTMLElement>('[data-safari-sticky="' + entry.id + '"]');
+        if (el) {
+          el.style.visibility = entry.visibility;
+          el.removeAttribute('data-safari-sticky');
+        }
+      }
+      return 'restored';
+    }
+    return this.serialize(script, state);
+  }
+
+  /**
+   * Builds a script to scroll the matching element into the viewport center
+   *
+   * Used by element-mode screenshots before capture so an element below the
+   * fold is positioned within the visible window before the screencapture
+   * call. Silently no-ops when the selector matches no element; a follow-up
+   * inspect call decides what to do in that case.
+   *
+   * @param {string} selector - CSS selector for the target element
+   * @returns {string} Browser script string
+   */
+  scrollElementIntoView(selector: string): string {
+    function script(selector: string): string {
+      const el = document.querySelector(selector) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
+      return 'scrolled';
+    }
+    return this.serialize(script, selector);
+  }
+
+  /**
+   * Builds a script to capture page scroll geometry for full-page screenshot stitching
+   *
+   * Returns viewport height, scrollable height, current scroll offset, and the
+   * device pixel ratio so the caller can size the composite canvas correctly on
+   * retina displays.
+   *
+   * @returns {string} Browser script string
+   */
+  scrollGeometry(): string {
+    function script(): string {
+      return JSON.stringify({
+        innerHeight: window.innerHeight,
+        scrollHeight: document.body.scrollHeight,
+        scrollOffset: window.scrollY,
+        devicePixelRatio: window.devicePixelRatio || 1
       });
     }
     return this.serialize(script);

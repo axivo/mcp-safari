@@ -18,7 +18,7 @@ I'm a site reliability engineer specialized in:
 
 ## Architecture
 
-A small TypeScript server, ~2,800 lines of source, that translates MCP tool calls into Safari automation. There is no daemon, no listening socket, no HTTP server - the host (e.g., Claude Code) spawns the server as a child process, communicates over stdio, and tears it down when the host exits. The server controls the user's actual Safari session through Apple Events (AppleScript and JXA), so cookies, login state, and browsing history are preserved across calls.
+A small TypeScript server that translates MCP tool calls into Safari automation. There is no daemon, no listening socket, no HTTP server - the host (e.g., Claude Code) spawns the server as a child process, communicates over stdio, and tears it down when the host exits. The server controls the user's actual Safari session through Apple Events (AppleScript and JXA), so cookies, login state, and browsing history are preserved across calls.
 
 The server's job is small and focused: accept a tool call from the host, drive Safari to perform it, return a structured response. No state is persisted across server restarts. There is no authentication layer between host and server because there is no transport-level access - whoever controls the MCP client controls the server entirely. Security relies on the host enforcing tool boundaries and on the user trusting the MCP client they configure.
 
@@ -26,7 +26,7 @@ The server's job is small and focused: accept a tool call from the host, drive S
 
 ```
 .
-├── package.json                          npm metadata, single runtime dep on @modelcontextprotocol/sdk + zod
+├── package.json                          npm metadata, runtime deps: @modelcontextprotocol/sdk, sharp, zod
 ├── tsconfig.json                         strict TypeScript, ES2022 target, NodeNext modules, DOM lib for browser-side scripts
 ├── CHANGELOG.md                          Keep a Changelog format, semver
 ├── README.md                             user-facing install + tool reference
@@ -111,7 +111,7 @@ Seventeen tools live in `McpTool`, each registered once in `Mcp.registerAll()`. 
 | `close`      | Close only the working tab                                    | `destructiveHint: true`, `idempotentHint: true`   |
 | `inspect`    | Return element metadata for a CSS selector                    | `readOnlyHint: true`, `idempotentHint: true`      |
 | `read`       | Extract page title, URL, text or anchor links, console errors | `readOnlyHint: true`, `idempotentHint: true`      |
-| `screenshot` | Capture the current viewport as base64 PNG                    | `readOnlyHint: true`, `idempotentHint: true`      |
+| `screenshot` | Capture the Safari window, an element, the full page, or the screen | `readOnlyHint: true`, `idempotentHint: true`      |
 | `scroll`     | Scroll by direction, pixels, or viewport-page index           | `destructiveHint: false`                          |
 | `status`     | Return current Safari tabs and the full tool surface          | `readOnlyHint: true`, `idempotentHint: true`      |
 | `wait`       | Wait for selector to appear, disappear, or text to render     | `readOnlyHint: true`, `idempotentHint: true`      |

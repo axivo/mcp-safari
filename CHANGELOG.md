@@ -4,6 +4,30 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-05-08
+
+### Added
+
+- `display` parameter on `screenshot` for selecting a 1-based display in screen mode
+- `mode` parameter on `screenshot` with `element`, `page`, `screen`, and `window` values
+- `selector` parameter on `screenshot` for capturing the bounding rect of a CSS-selected element
+- `settle` parameter on `screenshot` controlling the per-scroll wait in page mode
+- `share` parameter on `screenshot` saving the image to the user's screenshot folder and returning the path
+- Element-mode auto-scroll with `Browser.scrollElementIntoView` so below-fold elements are repositioned before capture
+- Full-page stitching with sharp compositing, live `scrollHeight` re-read per iteration, and a 60-segment safety cap
+- Page-mode sticky-element suppression via `Browser.hideStickyElements` and `Browser.restoreStickyElements`
+- Page-mode scrollbar suppression via `Browser.hideScrollbars` and `Browser.restoreScrollbars`
+- Page-mode geometry reader `Browser.scrollGeometry` returning innerHeight, scrollHeight, scrollOffset, devicePixelRatio
+- Honoring of `com.apple.screencapture` defaults (`location`, `type`, `name`, `include-date`) for share-true filenames
+- Dependency `sharp` `^0.34.5` for image compositing and format conversion
+
+### Changed
+
+- Tool `screenshot` description and `_meta.usage` rewritten for the multi-mode surface
+- Method `Client.takeScreenshot` returns `{ kind: 'inline' | 'saved', ... }` instead of a raw base64 string
+- Handler `handleScreenshot` omits browser metadata (`innerHeight`, `scrollHeight`, `pages`) for screen mode
+- Class methods reordered alphabetically in `Browser` and `Client` after the new screenshot helpers landed
+
 ## [1.1.1] - 2026-05-07
 
 ### Added
