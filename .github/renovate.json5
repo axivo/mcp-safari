@@ -44,7 +44,7 @@
       ]
     },
     {
-      "enabled": true,
+      "enabled": false,
       "matchDatasources": [
         "node-version"
       ],
@@ -52,7 +52,8 @@
         "node"
       ],
       "matchUpdateTypes": [
-        "major"
+        "minor",
+        "patch"
       ]
     }
   ],
