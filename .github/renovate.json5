@@ -45,9 +45,6 @@
     },
     {
       "enabled": false,
-      "matchDatasources": [
-        "node-version"
-      ],
       "matchDepNames": [
         "node"
       ],
