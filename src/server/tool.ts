@@ -123,6 +123,7 @@ export class McpTool {
         openWorldHint: true
       },
       _meta: {
+        'anthropic/maxResultSizeChars': 500000,
         usage: [
           'Avoid using `execute` for DOM inspection - use `inspect` instead',
           'Prefer `click` with `text` parameter and `read` for page interaction',
@@ -306,6 +307,7 @@ export class McpTool {
         openWorldHint: false
       },
       _meta: {
+        'anthropic/maxResultSizeChars': 500000,
         usage: [
           'Use after navigating to understand available content',
           'Use `mode: "links"` to enumerate anchor links on the page',
