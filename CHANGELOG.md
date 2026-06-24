@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `_meta` key `anthropic/maxResultSizeChars` set to `500000` on the `execute` and `read` tools
 
+### Changed
+
+- Format cast updated to `keyof FormatEnum` for 0.35 `sharp` type surface
+
 ## [1.1.2] - 2026-05-08
 
 ### Added

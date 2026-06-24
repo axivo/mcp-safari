@@ -10,7 +10,7 @@ import { execFile } from 'child_process';
 import { readFileSync, unlinkSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { dirname, join } from 'path';
-import sharp from 'sharp';
+import sharp, { type FormatEnum } from 'sharp';
 import { fileURLToPath } from 'url';
 import { Automation } from '../lib/automation.js';
 import { Browser } from '../lib/browser.js';
@@ -275,7 +275,7 @@ export class Client {
         const cropHeight = Math.max(1, Math.min(rectHeight, windowImageHeight - cropTop));
         await sharp(windowPath)
           .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })
-          .toFormat(output.type as keyof sharp.FormatEnum)
+          .toFormat(output.type as keyof FormatEnum)
           .toFile(output.path);
       } finally {
         try {
@@ -402,7 +402,7 @@ export class Client {
         }
       })
         .composite(segments.map((s) => ({ input: s.buffer, top: s.top, left: 0 })))
-        .toFormat(output.type as keyof sharp.FormatEnum)
+        .toFormat(output.type as keyof FormatEnum)
         .toFile(output.path);
     } finally {
       await this.executeScript(target, this.browser.restoreScrollbars(scrollbarToken));
