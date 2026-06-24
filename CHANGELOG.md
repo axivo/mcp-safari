@@ -4,6 +4,12 @@ All notable changes to the Safari MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-06-24
+
+### Added
+
+- `_meta` key `anthropic/maxResultSizeChars` set to `500000` on the `execute` and `read` tools
+
 ## [1.1.2] - 2026-05-08
 
 ### Added
